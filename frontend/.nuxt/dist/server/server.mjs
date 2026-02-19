@@ -1,0 +1,1 @@
+export { default } from "file:///D:/laragon/www/data-marketplace/frontend/node_modules/@nuxt/vite-builder/dist/vite-node-entry.mjs"

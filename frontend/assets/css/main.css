@@ -1,0 +1,11 @@
+.input {
+    @apply w-full border rounded p-2;
+}
+
+a {
+    @apply transition-colors duration-150;
+}
+
+html, body, #__nuxt, #__layout {
+    height: 100%;
+}
