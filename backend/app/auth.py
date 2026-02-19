@@ -1,9 +1,10 @@
 # app/auth.py
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from passlib.hash import bcrypt
 from datetime import datetime, timedelta
-import jwt
+from jose import jwt, JWTError
 import os
 from dotenv import load_dotenv
 
@@ -13,7 +14,8 @@ from app.db import get_db
 
 load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY")
-
+ALGORITHM = os.getenv("ALGORITHM")
+ACCESS_TOKEN_EXPIRE_HOURS = os.getenv("ACCESS_TOKEN_EXPIRE_HOURS")
 router = APIRouter()
 
 @router.post("/register")
@@ -32,13 +34,13 @@ def login(data: LoginSchema, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == data.email).first()
     if not user or not bcrypt.verify(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    payload = {"sub": user.id, "exp": datetime.utcnow() + timedelta(hours=2)}
-    token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+    payload = {"sub": user.id, "exp": datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)}
+    token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
     return {"access_token": token}
 
 def get_current_user(token: str = Depends(...), db: Session = Depends(get_db)):
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=ALGORITHM)
         user_id = payload.get("sub")
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
