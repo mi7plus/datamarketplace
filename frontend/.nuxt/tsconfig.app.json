@@ -160,6 +160,7 @@
     "../layers/*/*.d.ts"
   ],
   "exclude": [
+    "../../node_modules",
     "../dist",
     "../.data",
     "../modules/*/runtime/server/**/*",

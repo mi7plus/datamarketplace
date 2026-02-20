@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import PageWrapper from '~/components/layout/PageWrapper.vue'
 </script>
+
 <template>
-  <PageWrapper>
-    <h1 class="text-4xl font-bold mb-4">
+  <PageWrapper class="flex flex-col justify-center items-center">
+    <h1 class="text-4xl font-bold mb-4 text-center">
       Open Data for Everyone
     </h1>
-    <p class="text-gray-600 mb-8">
+    <p class="text-gray-600 mb-8 text-center">
       Request, collect, and exchange data for AI & analytics.
     </p>
     <div class="flex justify-center gap-4">

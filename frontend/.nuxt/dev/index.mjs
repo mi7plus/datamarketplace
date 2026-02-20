@@ -646,7 +646,10 @@ const _inlineRuntimeConfig = {
       }
     }
   },
-  "public": {}
+  "public": {
+    "apiBase": "http://localhost:3001"
+  },
+  "apiSecret": "supersecretkey123"
 };
 const envOptions = {
   prefix: "NITRO_",
@@ -2135,16 +2138,16 @@ _326DIOZQRJJF2t6YWHXD53D6IJtiSxRrXwUrnjhFH2s
 const assets = {
   "/index.mjs": {
     "type": "text/javascript; charset=utf-8",
-    "etag": "\"19e1d-DpgVpPmRSFf5RJW9x+gz9nFI2Zo\"",
-    "mtime": "2026-02-19T12:44:55.657Z",
-    "size": 106013,
+    "etag": "\"19e6b-yIPjcerUY64sIZ149ZtBQ/LCxDQ\"",
+    "mtime": "2026-02-20T07:20:25.151Z",
+    "size": 106091,
     "path": "index.mjs"
   },
   "/index.mjs.map": {
     "type": "application/json",
-    "etag": "\"6a2d7-N2ixV/EL90yMp4eGmSQrBc9IoS4\"",
-    "mtime": "2026-02-19T12:44:55.657Z",
-    "size": 434903,
+    "etag": "\"6a3f4-woDdqgipL+7nKooq0DbfdaNC4qo\"",
+    "mtime": "2026-02-20T07:20:25.151Z",
+    "size": 435188,
     "path": "index.mjs.map"
   }
 };

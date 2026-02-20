@@ -13,11 +13,11 @@ const role = ref<'requester' | 'provider'>('requester') // Optional role selecti
 
 const submit = async () => {
   try {
-    await auth.register({
-      email: email.value,
-      password: password.value,
-      role: role.value,
-    })
+    await auth.register(
+      email.value,
+      password.value,
+      role.value,
+    )
     alert('Registered successfully!')
     router.push('/') // redirect after registration
   } catch (err: any) {

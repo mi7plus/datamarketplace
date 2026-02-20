@@ -13,7 +13,6 @@ const password = ref('')
 const submit = async () => {
   try {
     await auth.login(email.value, password.value)
-    alert('Logged in!')
     router.push('/') // redirect after login
   } catch (err: any) {
     alert(err.data?.detail || 'Login failed')
