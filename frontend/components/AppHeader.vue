@@ -25,8 +25,11 @@ const linkClass = (path) =>
           Post Request
         </NuxtLink>
 
-        <NuxtLink v-if="auth.isAuthenticated" to="/submissions" class="text-gray-600 hover:text-black">
+        <NuxtLink v-if="auth.isAuthenticated" to="/submissions" :class="linkClass('/submissions')" class="text-gray-600 hover:text-black">
           My Submissions
+        </NuxtLink>
+        <NuxtLink v-if="auth.isAuthenticated" to="/profile" :class="linkClass('/profile')" class="text-gray-600 hover:text-black">
+          My Profile
         </NuxtLink>
         <NuxtLink v-if="!auth.isAuthenticated" to="/login">Login</NuxtLink>
         <NuxtLink v-if="!auth.isAuthenticated" to="/register">Register</NuxtLink>

@@ -9,8 +9,13 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     role = Column(String, nullable=False)  # "requester" or "provider"
+
+    # Existing relationships
     requests = relationship("DataRequest", back_populates="requester")
     submissions = relationship("Submission", back_populates="provider")
+
+    # New one-to-one relationship
+    profile = relationship("UserProfile", uselist=False, back_populates="user")
 
 class DataRequest(Base):
     __tablename__ = "data_requests"
@@ -34,3 +39,19 @@ class Submission(Base):
     status = Column(String, default="pending")  # pending / accepted / rejected
     request = relationship("DataRequest", back_populates="submissions")
     provider = relationship("User", back_populates="submissions")
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)  # Link to User
+    user_type = Column(String, nullable=False)  # 'person' or 'company'
+    first_name = Column(String, nullable=True)
+    last_name = Column(String, nullable=True)
+    company_name = Column(String, nullable=True)
+    email = Column(String, nullable=False, unique=True)
+    phone = Column(String, nullable=True)
+    address = Column(String, nullable=True)
+
+    # Relationship back to User
+    user = relationship("User", back_populates="profile")

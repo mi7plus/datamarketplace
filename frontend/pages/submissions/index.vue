@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import PageWrapper from '~/components/layout/PageWrapper.vue'
+import BackButton from '~/components/BackButton.vue'
 </script>
 <template>
   <PageWrapper>
+    <BackButton fallback="/submissions" />
     <h1 class="text-2xl font-bold mb-4">
       My Submissions
     </h1>

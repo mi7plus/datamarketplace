@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.auth import router as auth_router
 from app.requests import router as requests_router
 from app.submissions import router as submissions_router
+from app.profile import router as profile_router
 from dotenv import load_dotenv
 import os
 
@@ -30,3 +31,4 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(requests_router, prefix="/requests", tags=["requests"])
 app.include_router(submissions_router, prefix="/submissions", tags=["submissions"])
+app.include_router(profile_router, prefix="/profile", tags=["profile"])

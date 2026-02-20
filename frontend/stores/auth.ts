@@ -24,7 +24,6 @@ export const useAuthStore = defineStore('auth', {
         async register(email: string, password: string, role: string = 'requester') {
             const config = useRuntimeConfig()
             const base = config.public.apiBase
-            console.log(base)
             const res = await $fetch(base + '/auth/register', {
                 method: 'POST',
                 body: { email, password, role }
@@ -39,7 +38,7 @@ export const useAuthStore = defineStore('auth', {
         },
 
         setToken(token: string) {
-            this.token = token
+            this.token = token.replace(/(^"|"$)/g, '') // remove quotes
             localStorage.setItem('token', this.token)
         },
 
