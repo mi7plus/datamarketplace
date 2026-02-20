@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
-from passlib.hash import bcrypt
+from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
 import os
@@ -15,14 +15,15 @@ from app.db import get_db
 load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
-ACCESS_TOKEN_EXPIRE_HOURS = os.getenv("ACCESS_TOKEN_EXPIRE_HOURS")
+ACCESS_TOKEN_EXPIRE_HOURS = int(os.getenv("ACCESS_TOKEN_EXPIRE_HOURS"))
 router = APIRouter()
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 @router.post("/register")
 def register(data: RegisterSchema, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == data.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
-    hashed = bcrypt.hash(data.password)
+    hashed = pwd_context.hash(data.password)
     user = User(email=data.email, password_hash=hashed, role=data.role)
     db.add(user)
     db.commit()
@@ -32,7 +33,7 @@ def register(data: RegisterSchema, db: Session = Depends(get_db)):
 @router.post("/login", response_model=TokenSchema)
 def login(data: LoginSchema, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == data.email).first()
-    if not user or not bcrypt.verify(data.password, user.password_hash):
+    if not user or not pwd_context.verify(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     payload = {"sub": user.id, "exp": datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)}
     token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
@@ -40,7 +41,7 @@ def login(data: LoginSchema, db: Session = Depends(get_db)):
 
 def get_current_user(token: str = Depends(...), db: Session = Depends(get_db)):
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=ALGORITHM)
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = payload.get("sub")
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
