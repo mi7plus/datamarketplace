@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.models import UserProfile, User
 from app.schemas import ProfileCreate
 from app.db import get_db
-from app.auth_dependencies import get_current_user
+from app.auth import get_current_user
 
 router = APIRouter()
 
@@ -34,3 +34,32 @@ def create_or_update_profile(
     db.commit()
     db.refresh(new_profile)
     return {"message": "Profile created", "profile": new_profile}
+
+@router.get("/", response_model=ProfileCreate)
+def get_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+    if not profile:
+        # Return empty/default values instead of 404
+        return {
+            "user_type": "",
+            "firstName": "",
+            "lastName": "",
+            "companyName": "",
+            "email": "",
+            "phone": "",
+            "address": ""
+        }
+
+    # Convert SQLAlchemy object to dict for Pydantic model
+    return ProfileCreate(
+        user_type=profile.user_type,
+        firstName=profile.first_name,
+        lastName=profile.last_name,
+        companyName=profile.company_name,
+        email=profile.email,
+        phone=profile.phone,
+        address=profile.address
+    )

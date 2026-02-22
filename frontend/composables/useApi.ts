@@ -1,4 +1,3 @@
-// composables/useApi.ts
 import { useAuthStore } from '~/stores/auth'
 
 export const useApi = () => {
@@ -6,52 +5,46 @@ export const useApi = () => {
     const base = config.public.apiBase
     const auth = useAuthStore()
 
-    const get = async (url: string) => {
-        const headers: any = { 'Content-Type': 'application/json' }
-        if (auth.token) headers['Authorization'] = `Bearer ${auth.token}`
+    const buildHeaders = () => {
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json'
+        }
 
-        const res = await fetch(`${base}${url}`, { headers })
-        if (!res.ok) throw new Error(`GET ${url} failed: ${res.status}`)
+        if (auth.token) {
+            headers['Authorization'] = `Bearer ${auth.token}`
+        }
+
+        return headers
+    }
+
+    const get = async (url: string) => {
+        const res = await fetch(`${base}${url}`, {
+            method: 'GET',
+            headers: buildHeaders()
+        })
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.detail || `GET ${url} failed`)
+        }
+
         return res.json()
     }
 
     const post = async (url: string, data: any) => {
-        const headers: any = { 'Content-Type': 'application/json' }
-        if (auth.token) headers['Authorization'] = `Bearer ${auth.token}`
-
         const res = await fetch(`${base}${url}`, {
             method: 'POST',
-            headers,
+            headers: buildHeaders(),
             body: JSON.stringify(data)
         })
-        if (!res.ok) throw new Error(`POST ${url} failed: ${res.status}`)
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.detail || `POST ${url} failed`)
+        }
+
         return res.json()
     }
 
-    const put = async (url: string, data: any) => {
-        const headers: any = { 'Content-Type': 'application/json' }
-        if (auth.token) headers['Authorization'] = `Bearer ${auth.token}`
-
-        const res = await fetch(`${base}${url}`, {
-            method: 'PUT',
-            headers,
-            body: JSON.stringify(data)
-        })
-        if (!res.ok) throw new Error(`PUT ${url} failed: ${res.status}`)
-        return res.json()
-    }
-
-    const del = async (url: string) => {
-        const headers: any = {}
-        if (auth.token) headers['Authorization'] = `Bearer ${auth.token}`
-
-        const res = await fetch(`${base}${url}`, {
-            method: 'DELETE',
-            headers
-        })
-        if (!res.ok) throw new Error(`DELETE ${url} failed: ${res.status}`)
-        return res.json()
-    }
-
-    return { get, post, put, del }
+    return { get, post }
 }

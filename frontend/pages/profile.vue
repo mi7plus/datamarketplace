@@ -1,9 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import {onMounted, ref} from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi } from '~/composables/useApi'
 import PageWrapper from '~/components/layout/PageWrapper.vue'
 import BackButton from '~/components/BackButton.vue'
+
+definePageMeta({
+  middleware: 'auth'
+})
 
 // Reactive form state
 const router = useRouter()
@@ -18,7 +22,7 @@ const form = ref({
 })
 const loading = ref(false)
 const error = ref('')
-const { post } = useApi()
+const { post, get } = useApi()
 
 const saveProfile = async () => {
   try {
@@ -28,6 +32,27 @@ const saveProfile = async () => {
     console.error(err)
   }
 }
+
+const loadProfile = async () => {
+  try {
+    const res = await get('/profile/')
+    // Assign backend response to form
+    form.value = {
+      firstName: res.firstName || '',
+      lastName: res.lastName || '',
+      companyName: res.companyName || '',
+      email: res.email || '',
+      phone: res.phone || '',
+      address: res.address || '',
+      user_type: res.user_type || 'person'
+    }
+  } catch (err) {
+    console.error("Failed to load profile:", err)
+  }
+}
+
+onMounted(loadProfile)
+
 </script>
 
 <template>

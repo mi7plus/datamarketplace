@@ -1,9 +1,11 @@
 import { defineStore } from 'pinia'
+import { useRouter } from 'vue-router'
 
 export const useAuthStore = defineStore('auth', {
     state: () => ({
         token: null as string | null,
-        user: null as any | null
+        refreshing: false,
+        user: null
     }),
 
     getters: {
@@ -11,6 +13,13 @@ export const useAuthStore = defineStore('auth', {
     },
 
     actions: {
+
+        init() {
+            if (process.client) {
+                this.token = localStorage.getItem('token')
+            }
+        },
+
         async login(email: string, password: string) {
             const config = useRuntimeConfig()
             const base = config.public.apiBase
@@ -34,12 +43,23 @@ export const useAuthStore = defineStore('auth', {
         },
 
         logout() {
-            this.clear()
+            this.token = null
+            this.user = null
+
+            if (process.client) {
+                localStorage.removeItem('token')
+            }
+
+            navigateTo('/login')
         },
 
         setToken(token: string) {
-            this.token = token.replace(/(^"|"$)/g, '') // remove quotes
-            localStorage.setItem('token', this.token)
+            this.token = token
+            this.user = null
+
+            if (process.client) {
+                localStorage.setItem('token', token)
+            }
         },
 
         setUser(user: { id: string; email: string }) {
@@ -49,7 +69,9 @@ export const useAuthStore = defineStore('auth', {
         clear() {
             this.token = null
             this.user = null
-            localStorage.removeItem('token')
+            if (process.client) {
+                localStorage.removeItem('token')
+            }
         }
     }
 })

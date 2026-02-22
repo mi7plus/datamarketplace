@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import PageWrapper from '~/components/layout/PageWrapper.vue'
 import BackButton from '~/components/BackButton.vue'
+definePageMeta({
+  middleware: 'auth'
+})
 </script>
 <template>
   <PageWrapper>

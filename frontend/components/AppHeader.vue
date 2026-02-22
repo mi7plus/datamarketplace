@@ -1,8 +1,13 @@
 <script setup>
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 const route = useRoute()
+const router = useRouter()
 import { useAuthStore } from '@/stores/auth'
 const auth = useAuthStore()
+const logout = async () => {
+  auth.logout()
+  await router.push('/login')
+}
 const linkClass = (path) =>
     route.path.startsWith(path)
         ? 'text-black font-semibold'
@@ -33,7 +38,7 @@ const linkClass = (path) =>
         </NuxtLink>
         <NuxtLink v-if="!auth.isAuthenticated" to="/login">Login</NuxtLink>
         <NuxtLink v-if="!auth.isAuthenticated" to="/register">Register</NuxtLink>
-        <button v-if="auth.isAuthenticated" @click="auth.logout" class="text-gray-600 hover:text-black">
+        <button v-if="auth.isAuthenticated" @click="logout" class="text-gray-600 hover:text-black">
           Logout
         </button>
       </nav>
