@@ -55,7 +55,7 @@ class UserAuth(BaseModel):
     profile = relationship(
         "UserProfile",
         uselist=False,
-        back_populates="user"
+        back_populates="user",
         cascade="all, delete-orphan"
     )
     requests = relationship(
