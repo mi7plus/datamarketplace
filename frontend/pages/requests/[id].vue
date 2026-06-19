@@ -3,24 +3,47 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import PageWrapper from '~/components/layout/PageWrapper.vue'
 import BackButton from '~/components/BackButton.vue'
+import SubmissionForm from '~/components/requests/SubmissionForm.vue'
 import { useRequests } from '~/composables/useRequests'
+import { useAuthStore } from '~/stores/auth'
+import { useApi } from '~/composables/useApi'
 
 const route = useRoute()
 const { fetchRequest } = useRequests()
+const auth = useAuthStore()
+const api = useApi()
 
 const request = ref<any>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
+const submissions = ref<any[]>([])
+
+async function loadSubmissions() {
+    try {
+        submissions.value = await api.get(`/submissions/request/${route.params.id}`)
+    } catch { /* not the requester — ignore */ }
+}
 
 onMounted(async () => {
     const data = await fetchRequest(route.params.id as string)
     if (data) {
         request.value = data
+        await loadSubmissions()
     } else {
         error.value = 'Request not found'
     }
     loading.value = false
 })
+
+const submissionStatusColour: Record<string, string> = {
+    validated: 'bg-blue-100 text-blue-700',
+    accepted: 'bg-green-100 text-green-700',
+    partially_accepted: 'bg-yellow-100 text-yellow-700',
+    rejected: 'bg-red-100 text-red-500',
+    rejected_invalid: 'bg-red-100 text-red-600',
+    paid: 'bg-emerald-100 text-emerald-700',
+    disputed: 'bg-orange-100 text-orange-700',
+}
 
 const fillPct = computed(() => {
     if (!request.value?.amount_required || !request.value?.accepted_total) return 0
@@ -129,16 +152,38 @@ const statusColour: Record<string, string> = {
                 </p>
             </div>
 
-            <!-- Submit data CTA (providers) -->
-            <div class="border rounded-lg p-4 bg-blue-50">
-                <p class="text-sm text-blue-800">
-                    Have data that matches this spec?
-                    <strong>{{ remaining.toLocaleString() }} {{ request.unit ?? 'units' }}</strong> still needed.
-                </p>
-                <NuxtLink :to="`/submissions?request=${request.id}`"
-                    class="inline-block mt-2 text-sm bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-                    Submit Data
-                </NuxtLink>
+            <!-- Provider: inline submission form -->
+            <SubmissionForm
+                v-if="request.status === 'open' || request.status === 'partially_fulfilled'"
+                :request-id="request.id"
+                :request-spec="request.spec"
+                :unit="request.unit"
+                @submitted="loadSubmissions"
+            />
+
+            <!-- Buyer: validated submissions list -->
+            <div v-if="submissions.length" class="border rounded-lg p-4 bg-white space-y-3">
+                <h2 class="font-semibold text-sm text-gray-700 uppercase tracking-wide">
+                    Submissions ({{ submissions.length }})
+                </h2>
+                <div v-for="s in submissions" :key="s.id"
+                    class="border rounded p-3 space-y-2 text-sm">
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-500 text-xs font-mono">{{ s.id.slice(0, 8) }}…</span>
+                        <span class="text-xs px-2 py-0.5 rounded-full"
+                            :class="submissionStatusColour[s.status] ?? 'bg-gray-100 text-gray-600'">
+                            {{ s.status.replace('_', ' ') }}
+                        </span>
+                    </div>
+                    <dl class="grid grid-cols-3 gap-x-4 gap-y-1 text-xs text-gray-600">
+                        <dt>Offered</dt><dd>{{ s.offered_amount?.toLocaleString() }}</dd>
+                        <dd />
+                        <dt>Validated</dt><dd>{{ s.validated_amount?.toLocaleString() ?? '—' }}</dd>
+                        <dd />
+                        <dt>Accepted</dt><dd>{{ s.accepted_amount?.toLocaleString() ?? 0 }}</dd>
+                        <dd />
+                    </dl>
+                </div>
             </div>
 
         </div>

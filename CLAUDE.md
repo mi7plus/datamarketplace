@@ -98,6 +98,8 @@ cd backend
 | `submissions.py` | `/submissions` — create `Submission` |
 | `lifecycle.py` | State machine functions for `DataRequest` and `Submission` — all status changes go through here |
 | `seed.py` | Seeds `licenses` table with standard license options — run once |
+| `ingest.py` | CSV/JSONL validation engine: schema check, count, dedup, sample, SHA-256 hash |
+| `storage.py` | Storage abstraction (`LocalStorage` now, `MinioStorage` in Phase 6) — `get_storage()` singleton |
 
 **Key design decisions:**
 - All models inherit `BaseModel` which provides a UUID primary key, `created_at`, `updated_at`, `is_deleted`, and `version`.
@@ -172,7 +174,7 @@ Active roadmap: `datamarketplace-implementation-plan.md`. Work phase by phase. S
 | Phase 0 — Hygiene & bug fixes | ✅ Done | Secrets gitignored, bugs fixed, `routes.py` deleted |
 | Phase 1 — Alembic + model + lifecycles | ✅ Done | Alembic wired; models extended; state machines in `lifecycle.py`; 18 tests passing |
 | Phase 2 — Structured request spec & creation flow | ✅ Done | Spec schema, column editor, live progress bar, real API in composable |
-| Phase 3 — Submission + ingest validation | ⏳ Pending | |
+| Phase 3 — Submission + ingest validation | ✅ Done | File upload, CSV/JSONL validator, dedup, sample, SHA-256 hash; 31 tests passing |
 | Phase 4 — Fulfilment engine | ⏳ Pending | Core MVP value |
 | Phase 5 — Escrow & payments (Stripe) | ⏳ Pending | |
 | Phase 6 — Gated delivery (MinIO) | ⏳ Pending | |
