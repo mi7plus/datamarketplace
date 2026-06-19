@@ -10,12 +10,18 @@ export const useApi = () => {
         return h
     }
 
-    // Normalize FastAPI error bodies into a readable Error.
-    // FE4 extends this to handle validation errors (detail as an array of objects).
+    // Normalize FastAPI error bodies into a readable Error. FastAPI returns
+    // `detail` as a string for HTTPException, but as an array of {loc,msg,type}
+    // objects for request-validation (422) errors — which would otherwise render
+    // as "[object Object]". Handle both shapes.
     const toError = async (res: Response, url: string) => {
         const body: any = await res.json().catch(() => ({}))
         let msg = `${res.status} ${url}`
-        if (typeof body.detail === 'string') msg = body.detail
+        if (typeof body.detail === 'string') {
+            msg = body.detail
+        } else if (Array.isArray(body.detail)) {
+            msg = body.detail.map((e: any) => e.msg).filter(Boolean).join('; ') || msg
+        }
         return new Error(msg)
     }
 
