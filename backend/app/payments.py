@@ -97,12 +97,18 @@ class FakePaymentProvider(PaymentProvider):
     """No real charges — just ledger entries. Replace with StripePaymentProvider in production."""
 
     def hold_escrow(self, request: DataRequest, db: Session) -> str:
-        ref = f"fake_hold_{uuid.uuid4().hex[:12]}"
+        # Deterministic ref (keyed by request) so the unique Ledger.external_ref
+        # constraint catches a double-hold exactly as Stripe's idempotency key would.
+        ref = f"fake_hold_{request.id}"
         append_ledger(db, request.id, "hold", request.budget or 0.0, ref)
         return ref
 
     def release_to_provider(self, submission: Submission, db: Session) -> str:
-        ref = f"fake_release_{uuid.uuid4().hex[:12]}"
+        # Deterministic ref (keyed by submission) — mirrors Stripe's
+        # idempotency_key=release_{submission.id}. A concurrent/duplicate release
+        # produces the SAME ref, so append_ledger's idempotency check (and the
+        # unique constraint) turn it into a no-op instead of a silent double-count.
+        ref = f"fake_release_{submission.id}"
         append_ledger(
             db, submission.request_id, "release",
             submission.amount_due or 0.0, ref,
@@ -113,7 +119,9 @@ class FakePaymentProvider(PaymentProvider):
     def refund_to_buyer(self, request: DataRequest, amount: float, db: Session) -> str:
         if amount <= 0:
             return "fake_refund_zero"
-        ref = f"fake_refund_{uuid.uuid4().hex[:12]}"
+        # Keyed by request + amount (in cents) to match StripePaymentProvider's
+        # refund idempotency key and stay stable across retries of the same refund.
+        ref = f"fake_refund_{request.id}_{int(round(float(amount) * 100))}"
         append_ledger(db, request.id, "refund", amount, ref)
         return ref
 

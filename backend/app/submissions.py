@@ -1,6 +1,8 @@
 # app/submissions.py
 import os
+import logging
 from datetime import datetime, timedelta
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,6 +18,8 @@ from app.payments import get_payment_provider, ledger_balance
 from app.reviews import _increment_transactions
 
 ACCEPTANCE_WINDOW_HOURS = int(os.getenv("ACCEPTANCE_WINDOW_HOURS", "72"))
+
+logger = logging.getLogger("submissions")
 
 router = APIRouter()
 
@@ -240,15 +244,57 @@ def accept(
 # Also auto-releases if the acceptance window has elapsed (called lazily here).
 # ---------------------------------------------------------------------------
 
-def _release_and_pay(submission: Submission, data_request: DataRequest, db: Session) -> Submission:
-    """Release escrow for an ACCEPTED/PARTIALLY_ACCEPTED submission and mark PAID."""
+def _release_and_pay(submission_id: str, db: Session) -> Submission:
+    """
+    Release escrow for an ACCEPTED/PARTIALLY_ACCEPTED submission and mark PAID.
+
+    The single locked chokepoint for ALL release triggers (confirm / claim /
+    lazy-download / sweep). Re-loads BOTH rows FOR UPDATE — request first, then
+    submission, the same lock order as accept() — and re-asserts status under the
+    lock. Concurrent triggers therefore serialise here and only the first releases;
+    a second caller sees PAID and returns a clean no-op (no double release, no 500).
+
+    The cheap pre-checks in callers (_auto_release_if_due, confirm, claim) are an
+    optimisation only — this re-check inside the lock is the authoritative one.
+    """
+    submission_pre = db.query(Submission).filter(Submission.id == submission_id).first()
+    if not submission_pre:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    # Lock order: request first, then submission (matches accept()).
+    data_request = (
+        db.execute(
+            select(DataRequest)
+            .where(DataRequest.id == str(submission_pre.request_id))
+            .with_for_update()
+        )
+        .scalars()
+        .first()
+    )
+    submission = (
+        db.execute(
+            select(Submission)
+            .where(Submission.id == submission_id)
+            .with_for_update()
+        )
+        .scalars()
+        .first()
+    )
+
+    # Decisive re-check UNDER the lock.
+    if submission.status == SubmissionStatus.PAID:
+        return submission                       # already released — clean no-op
+    if submission.status not in ACCEPTED_STATUSES:
+        return submission
+    if _has_open_dispute(submission.id, db):
+        return submission                       # dispute opened in the meantime
+
     payment = get_payment_provider()
     payment.release_to_provider(submission, db)
     submission = mark_paid(submission, db)
     _increment_transactions(str(data_request.requester_id), successful=True, db=db)
     _increment_transactions(str(submission.provider_id), successful=True, db=db)
     if data_request.status == RequestStatus.COMPLETED:
-        from decimal import Decimal
         balance = ledger_balance(db, data_request.id)
         if balance["remaining"] > Decimal("0"):
             payment.refund_to_buyer(data_request, balance["remaining"], db)
@@ -282,14 +328,15 @@ def _has_open_dispute(submission_id, db: Session) -> bool:
     )
 
 
-def _auto_release_if_due(submission: Submission, data_request: DataRequest, db: Session) -> bool:
+def _auto_release_if_due(submission: Submission, db: Session) -> bool:
     """
     Release escrow iff the submission is ACCEPTED/PARTIALLY_ACCEPTED, the acceptance
     window has elapsed, and no dispute is open. Returns True if it released.
 
-    This is the single source of truth for "is this submission eligible for
-    buyer-independent auto-release". The lazy /download check, the provider /claim
-    endpoint, and the background sweep all call it, so the rules can't diverge.
+    The status/window/dispute checks here are a CHEAP PRE-FILTER only — they avoid
+    taking the row lock for the common case where nothing is due. The authoritative
+    re-check happens inside _release_and_pay under FOR UPDATE, so correctness does
+    not depend on these pre-checks. Shared by lazy /download, /claim, and the sweep.
     """
     if submission.status not in ACCEPTED_STATUSES:
         return False
@@ -297,8 +344,8 @@ def _auto_release_if_due(submission: Submission, data_request: DataRequest, db: 
         return False
     if _has_open_dispute(submission.id, db):
         return False
-    _release_and_pay(submission, data_request, db)
-    return True
+    released = _release_and_pay(str(submission.id), db)
+    return released.status == SubmissionStatus.PAID
 
 
 def run_auto_release_sweep(db: Session) -> int:
@@ -323,9 +370,14 @@ def run_auto_release_sweep(db: Session) -> int:
     )
     released = 0
     for sub in due:
-        data_request = db.query(DataRequest).filter(DataRequest.id == str(sub.request_id)).first()
-        if data_request and _auto_release_if_due(sub, data_request, db):
-            released += 1
+        # Per-row isolation: one failing release (e.g. a provider with no connected
+        # Stripe account) must not abort the whole batch.
+        try:
+            if _auto_release_if_due(sub, db):
+                released += 1
+        except Exception:
+            db.rollback()
+            logger.exception("auto-release failed for submission %s", sub.id)
     return released
 
 
@@ -362,8 +414,9 @@ def confirm(
     if _has_open_dispute(submission.id, db):
         raise HTTPException(status_code=409, detail="A dispute is open — release is paused until admin resolves it")
 
-    submission = _release_and_pay(submission, data_request, db)
-    return {"submission": _serialize_submission(submission), "released": True}
+    submission = _release_and_pay(str(submission.id), db)
+    released = submission.status == SubmissionStatus.PAID
+    return {"submission": _serialize_submission(submission), "released": released}
 
 
 # ---------------------------------------------------------------------------
@@ -405,8 +458,9 @@ def claim(
     if _has_open_dispute(submission.id, db):
         raise HTTPException(status_code=409, detail="A dispute is open — release is paused until admin resolves it")
 
-    submission = _release_and_pay(submission, data_request, db)
-    return {"submission": _serialize_submission(submission), "released": True}
+    submission = _release_and_pay(str(submission.id), db)
+    released = submission.status == SubmissionStatus.PAID
+    return {"submission": _serialize_submission(submission), "released": released}
 
 
 # ---------------------------------------------------------------------------
@@ -555,7 +609,8 @@ def download(
 
     # Auto-release check: if window has elapsed and no dispute, release now (lazy).
     # Shares one helper with /claim and the sweep so the rules can't drift.
-    _auto_release_if_due(submission, data_request, db)
+    # (_release_and_pay commits, expiring `submission`; its status is re-read below.)
+    _auto_release_if_due(submission, db)
 
     # Status gate — full file for PAID or during the acceptance window (buyer verifying)
     allowed_statuses = (SubmissionStatus.PAID, SubmissionStatus.ACCEPTED, SubmissionStatus.PARTIALLY_ACCEPTED)
