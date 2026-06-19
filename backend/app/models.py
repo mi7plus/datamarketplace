@@ -145,6 +145,7 @@ class Submission(BaseModel):
     storage_location = Column(String)
     owner_signature = Column(String)      # provider warranty affirmation (Phase 8)
     access_expiry = Column(DateTime)
+    accepted_at = Column(DateTime, nullable=True)  # set when ACCEPTED; starts the review window
     __table_args__ = (
         Index("idx_submission_request_status", "request_id", "status"),
         Index("idx_submission_active_records", "is_deleted", "status"),

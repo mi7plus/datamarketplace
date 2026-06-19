@@ -1,6 +1,6 @@
 # app/submissions.py
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,6 +14,8 @@ from app.lifecycle import validate_submission, accept_submission, transition_sub
 from app.storage import get_storage
 from app.payments import get_payment_provider, ledger_balance
 from app.reviews import _increment_transactions
+
+ACCEPTANCE_WINDOW_HOURS = int(os.getenv("ACCEPTANCE_WINDOW_HOURS", "72"))
 
 router = APIRouter()
 
@@ -54,6 +56,11 @@ def _serialize_submission(s: Submission) -> dict:
         "dataset_hash": s.dataset_hash,
         "validation_report": s.validation_report,
         "created_at": s.created_at.isoformat() if s.created_at else None,
+        "accepted_at": s.accepted_at.isoformat() if s.accepted_at else None,
+        "confirm_by": (
+            (s.accepted_at + timedelta(hours=ACCEPTANCE_WINDOW_HOURS)).isoformat()
+            if s.accepted_at else None
+        ),
     }
 
 
@@ -212,29 +219,83 @@ def accept(
     submission, data_request = accept_submission(submission, data_request, db)
     # --- END critical section (accept_submission commits) ---
 
-    # Release escrow immediately for accepted units → transition to PAID
+    # Record when the acceptance window started (ACCEPTED/PARTIALLY_ACCEPTED only)
     if submission.status in (SubmissionStatus.ACCEPTED, SubmissionStatus.PARTIALLY_ACCEPTED):
-        payment = get_payment_provider()
-        payment.release_to_provider(submission, db)
-        submission = mark_paid(submission, db)
-        # Update analytics counters for both parties
-        _increment_transactions(str(data_request.requester_id), successful=True, db=db)
-        _increment_transactions(str(submission.provider_id), successful=True, db=db)
-
-    # If request just completed, refund any rounding remainder
-    if data_request.status == RequestStatus.COMPLETED:
-        balance = ledger_balance(db, data_request.id)
-        if balance["remaining"] > 0.01:
-            payment = get_payment_provider()
-            payment.refund_to_buyer(data_request, balance["remaining"], db)
+        submission.accepted_at = datetime.utcnow()
         db.commit()
 
+    # Escrow stays held. Buyer must call /confirm (or wait for auto-release after window).
     return {
         "submission": _serialize_submission(submission),
         "request_status": data_request.status,
         "request_accepted_total": data_request.accepted_total,
         "request_remaining": (data_request.amount_required or 0) - (data_request.accepted_total or 0),
+        "confirm_by": (
+            (submission.accepted_at + timedelta(hours=ACCEPTANCE_WINDOW_HOURS)).isoformat()
+            if submission.accepted_at else None
+        ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Buyer: confirm a submission (releases escrow → PAID)
+# Also auto-releases if the acceptance window has elapsed (called lazily here).
+# ---------------------------------------------------------------------------
+
+def _release_and_pay(submission: Submission, data_request: DataRequest, db: Session) -> Submission:
+    """Release escrow for an ACCEPTED/PARTIALLY_ACCEPTED submission and mark PAID."""
+    payment = get_payment_provider()
+    payment.release_to_provider(submission, db)
+    submission = mark_paid(submission, db)
+    _increment_transactions(str(data_request.requester_id), successful=True, db=db)
+    _increment_transactions(str(submission.provider_id), successful=True, db=db)
+    if data_request.status == RequestStatus.COMPLETED:
+        balance = ledger_balance(db, data_request.id)
+        if balance["remaining"] > 0:
+            payment.refund_to_buyer(data_request, balance["remaining"], db)
+    db.commit()
+    return submission
+
+
+@router.post("/{submission_id}/confirm")
+def confirm(
+    submission_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Buyer confirms the dataset is satisfactory → releases escrow to provider.
+    Also fires automatically (lazy) if ACCEPTANCE_WINDOW_HOURS has elapsed since
+    accepted_at and no dispute is open — so providers are never stranded.
+    """
+    submission = _get_submission_or_404(submission_id, db)
+
+    data_request = db.query(DataRequest).filter(DataRequest.id == str(submission.request_id)).first()
+    if not data_request:
+        raise HTTPException(status_code=404, detail="Request not found")
+    _require_request_owner(data_request, current_user)
+
+    accepted_statuses = (SubmissionStatus.ACCEPTED, SubmissionStatus.PARTIALLY_ACCEPTED)
+    if submission.status not in accepted_statuses:
+        # Auto-release path: if window has elapsed and no dispute, release silently
+        if submission.status == SubmissionStatus.PAID:
+            return {"submission": _serialize_submission(submission), "auto_released": False}
+        raise HTTPException(
+            status_code=409,
+            detail=f"Only ACCEPTED/PARTIALLY_ACCEPTED submissions can be confirmed (current: {submission.status})",
+        )
+
+    # Check if a dispute is open — if so, block release
+    from app.models import Dispute
+    dispute = db.query(Dispute).filter(
+        Dispute.submission_id == str(submission.id),
+        Dispute.status == "open",
+    ).first()
+    if dispute:
+        raise HTTPException(status_code=409, detail="A dispute is open — release is paused until admin resolves it")
+
+    submission = _release_and_pay(submission, data_request, db)
+    return {"submission": _serialize_submission(submission), "auto_released": False}
 
 
 # ---------------------------------------------------------------------------
@@ -380,14 +441,27 @@ def download(
         raise HTTPException(status_code=404, detail="Request not found")
     _require_request_owner(data_request, current_user)
 
-    # Status gate — full file only after payment
-    if submission.status != SubmissionStatus.PAID:
+    # Auto-release check: if window has elapsed and no dispute, release now (lazy sweep)
+    accepted_statuses = (SubmissionStatus.ACCEPTED, SubmissionStatus.PARTIALLY_ACCEPTED)
+    if submission.status in accepted_statuses and submission.accepted_at:
+        window_expired = datetime.utcnow() > submission.accepted_at + timedelta(hours=ACCEPTANCE_WINDOW_HOURS)
+        if window_expired:
+            from app.models import Dispute
+            open_dispute = db.query(Dispute).filter(
+                Dispute.submission_id == str(submission.id), Dispute.status == "open"
+            ).first()
+            if not open_dispute:
+                submission = _release_and_pay(submission, data_request, db)
+
+    # Status gate — full file for PAID or during the acceptance window (buyer verifying)
+    allowed_statuses = (SubmissionStatus.PAID, SubmissionStatus.ACCEPTED, SubmissionStatus.PARTIALLY_ACCEPTED)
+    if submission.status not in allowed_statuses:
         raise HTTPException(
             status_code=403,
             detail=(
-                f"Full file is only available for PAID submissions "
+                f"Full file is only available for PAID or ACCEPTED submissions "
                 f"(current status: {submission.status}). "
-                "Use /sample to preview before payment."
+                "Use /sample to preview before accepting."
             ),
         )
 
