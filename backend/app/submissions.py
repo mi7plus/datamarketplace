@@ -216,14 +216,11 @@ def accept(
     # Bump version for optimistic-concurrency detection by external callers
     data_request.version = (data_request.version or 1) + 1
 
-    # Run allocation (modifies submission + request in-place, then commits)
+    # Run allocation (modifies submission + request in-place, sets accepted_at, and
+    # commits once). accepted_at is anchored INSIDE this transaction (F9) so an
+    # ACCEPTED submission can never end up with a NULL window anchor.
     submission, data_request = accept_submission(submission, data_request, db)
     # --- END critical section (accept_submission commits) ---
-
-    # Record when the acceptance window started (ACCEPTED/PARTIALLY_ACCEPTED only)
-    if submission.status in (SubmissionStatus.ACCEPTED, SubmissionStatus.PARTIALLY_ACCEPTED):
-        submission.accepted_at = datetime.utcnow()
-        db.commit()
 
     # Escrow stays held. Buyer must call /confirm (or wait for auto-release after window).
     return {

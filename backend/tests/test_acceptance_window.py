@@ -80,6 +80,46 @@ class TestAcceptDoesNotRelease:
         assert returned_sub.status != "paid"
 
 
+class TestAcceptedAtInsideLock:
+    """F9: accepted_at must be set inside accept_submission's single transaction."""
+
+    def _run(self):
+        from app.lifecycle import accept_submission
+
+        commits = [0]
+        db = MagicMock()
+        db.commit.side_effect = lambda: commits.__setitem__(0, commits[0] + 1)
+        db.refresh = MagicMock()
+        db.flush = MagicMock()
+        db.add = MagicMock()
+        db.query.return_value.filter.return_value.all.return_value = []
+
+        sub = SimpleNamespace(
+            id="s1", status="validated", validated_amount=50, offered_amount=50,
+            accepted_amount=0, amount_due=None, request_id="r1", key_hashes=None,
+            accepted_at=None,
+        )
+        req = SimpleNamespace(
+            id="r1", amount_required=100, accepted_total=0,
+            price_per_unit="1.00", budget="100.00", status="open",
+        )
+        accept_submission(sub, req, db)
+        return sub, commits[0]
+
+    def test_accepted_at_set_by_accept_submission(self):
+        """accepted_at is populated by accept_submission itself — no second commit needed."""
+        sub, _ = self._run()
+        assert isinstance(sub.accepted_at, datetime), (
+            f"accepted_at should be a datetime set inside the lock, got {sub.accepted_at!r}"
+        )
+
+    def test_single_commit_covers_accepted_at(self):
+        """The status change AND accepted_at land in the same single commit."""
+        sub, commit_count = self._run()
+        assert commit_count == 1, f"Expected exactly 1 commit, got {commit_count}"
+        assert sub.accepted_at is not None
+
+
 class TestAutoReleaseWindow:
     def test_window_not_expired_no_auto_release(self):
         """Within the window, download should NOT auto-release."""

@@ -7,6 +7,7 @@
 # Phase 4 will wrap the allocation + acceptance transitions in a DB transaction
 # with an optimistic lock on DataRequest.version.
 
+from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException
@@ -182,6 +183,12 @@ def accept_submission(
     submission.accepted_amount = accepted
     submission.amount_due = (Decimal(accepted) * price_per_unit).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     request.accepted_total = (request.accepted_total or 0) + accepted
+
+    # Anchor the acceptance window in the SAME transaction as the status change (F9).
+    # If this were written in a separate post-lock commit, a crash in between would
+    # leave an ACCEPTED submission with accepted_at = NULL, which can never auto-release.
+    if new_status in (SubmissionStatus.ACCEPTED, SubmissionStatus.PARTIALLY_ACCEPTED):
+        submission.accepted_at = datetime.utcnow()
 
     # Enforce invariant in code before committing
     if submission.accepted_amount > submission.validated_amount:
