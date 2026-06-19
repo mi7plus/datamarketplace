@@ -8,7 +8,7 @@ import os
 import uuid
 
 from app.schemas import RegisterSchema, LoginSchema, TokenSchema
-from app.models import User
+from app.models import UserAuth as User
 from app.db import get_db
 
 router = APIRouter()

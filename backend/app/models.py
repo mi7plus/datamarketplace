@@ -16,6 +16,9 @@ from sqlalchemy.orm import relationship
 from app.db import Base
 from datetime import datetime
 from sqlalchemy import Enum
+# Python's own Enum, used as the base for the value enums below.
+# Keep this separate from sqlalchemy.Enum (the column type used in Column(...)).
+import enum
 
 class BaseModel(Base):
     __abstract__ = True
@@ -27,17 +30,23 @@ class BaseModel(Base):
     is_deleted = Column(Boolean, default=False)
     version = Column(Integer, default=1)
 
-class RequestStatus(str, Enum):
+class RequestStatus(str, enum.Enum):
     DRAFT = "draft"
     OPEN = "open"
     REVIEW = "review"
     COMPLETED = "completed"
     EXPIRED = "expired"
 
-class UserRole(str, Enum):
+class UserRole(str, enum.Enum):
     REQUESTER = "requester"
     PROVIDER = "provider"
     ADMIN = "admin"
+
+# Submission lifecycle status — referenced by the indexes on the Submission table
+class SubmissionStatus(str, enum.Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
 
 class UserAuth(BaseModel):
     __tablename__ = "user_auth"
@@ -112,6 +121,11 @@ class Submission(BaseModel):
     accepted_amount = Column(Integer, default=0)
     request = relationship("DataRequest", back_populates="submissions")
     provider = relationship("UserAuth", back_populates="submissions")
+    status = Column(
+        Enum(SubmissionStatus, name="submission_status_enum"),
+        default=SubmissionStatus.PENDING,
+        nullable=False
+    )
     quality_score = Column(Float, default=0)
     verified = Column(Boolean, default=False)
     dataset_hash = Column(String)

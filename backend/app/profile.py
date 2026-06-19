@@ -1,7 +1,7 @@
 # app/profile.py
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from app.models import UserProfile, User
+from app.models import UserProfile, UserAuth as User
 from app.schemas import ProfileCreate
 from app.db import get_db
 from app.auth import get_current_user
