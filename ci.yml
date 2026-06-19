@@ -1,0 +1,128 @@
+# .github/workflows/ci.yml
+# Drop this at .github/workflows/ci.yml in the repo.
+#
+# Backend job: spins up a real Postgres service, runs Alembic migrations, then the
+# full pytest suite (including the real-DB tests: allocation race, dedup, e2e).
+# Frontend job: installs deps and builds the Nuxt app (catches type/import errors).
+#
+# Storage defaults to LocalStorage (S3_ENDPOINT_URL is intentionally NOT set), so the
+# suite runs without MinIO. To also exercise the S3 path, uncomment the `minio` service
+# and the S3_* env vars below.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend (pytest + real Postgres)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: datamarket_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      # Uncomment to test the S3/MinIO storage path as well, and set S3_* env below.
+      # minio:
+      #   image: minio/minio:latest
+      #   env:
+      #     MINIO_ROOT_USER: minio
+      #     MINIO_ROOT_PASSWORD: minio123
+      #   ports:
+      #     - 9000:9000
+      #   options: >-
+      #     --health-cmd "curl -f http://localhost:9000/minio/health/live || exit 1"
+      #     --health-interval 5s --health-timeout 5s --health-retries 10
+      #   # NOTE: the official image needs `server /data` as the command; on GitHub
+      #   # services you can't set a command, so for S3 coverage prefer a step that
+      #   # runs MinIO via docker, or use moto/localstack instead.
+
+    env:
+      # db.py and migrations/env.py both build the URL from these five vars
+      POSTGRES_USER: ci
+      POSTGRES_PASSWORD: ci
+      POSTGRES_DB: datamarket_test
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      # app/auth.py needs these
+      SECRET_KEY: ci-test-secret-not-for-prod
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_HOURS: "2"
+      FRONTEND_URL: http://localhost:3000
+      # force the Fake payment provider (no real Stripe in CI)
+      STRIPE_USE_REAL: "false"
+      # S3_ENDPOINT_URL deliberately unset → LocalStorage
+      # S3_ENDPOINT_URL: http://localhost:9000
+      # AWS_ACCESS_KEY_ID: minio
+      # AWS_SECRET_ACCESS_KEY: minio123
+      # S3_BUCKET: ci-bucket
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # test-only deps not in requirements.txt
+          pip install pytest httpx
+
+      - name: Run migrations
+        run: alembic upgrade head
+
+      - name: Run tests
+        run: pytest -q
+
+  frontend:
+    name: Frontend (Nuxt build)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          NUXT_PUBLIC_API_BASE: http://localhost:3001
+
+      # Optional, once vue-tsc/nuxi typecheck is configured:
+      # - name: Typecheck
+      #   run: npx nuxi typecheck
