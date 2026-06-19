@@ -1,18 +1,6 @@
 <script setup>
-import { useAuthStore } from '~/stores/auth'
-import { onMounted } from 'vue'
-const auth = useAuthStore()
-
-onMounted(() => {
-  // Example: Load token from localStorage
-  const token = localStorage.getItem('token')
-  if (token) {
-    auth.setToken(token)
-    // Optional: fetch user info from backend if needed
-    // auth.setUser(...)
-  }
-})
-
+// Session rehydration is handled by plugins/auth.client.ts (re-mints the access
+// token from the httpOnly refresh cookie). No localStorage token here by design.
 </script>
 <template>
   <div class="min-h-screen flex flex-col bg-gray-50">
