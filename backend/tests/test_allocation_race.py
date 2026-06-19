@@ -15,6 +15,8 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
+from app.models import DataRequest, Submission, SubmissionStatus, AcceptedKey
+
 # Build a DATABASE_URL from individual env vars (same logic as db.py)
 def _build_url() -> str | None:
     user = os.getenv("POSTGRES_USER")
@@ -58,7 +60,7 @@ def _seed(engine, ids: dict, amount_required: int = 100):
     with engine.begin() as conn:
         conn.execute(text("""
             INSERT INTO user_auth (id, email, password_hash, role, created_at, is_deleted, version)
-            VALUES (:uid, :email, 'x', 'requester', now(), false, 1)
+            VALUES (:uid, :email, 'x', 'REQUESTER', now(), false, 1)
             ON CONFLICT DO NOTHING
         """), {"uid": ids["user_id"], "email": f"race_{ids['user_id']}@test.com"})
 
@@ -66,7 +68,7 @@ def _seed(engine, ids: dict, amount_required: int = 100):
             INSERT INTO data_requests
                 (id, title, status, budget, price_per_unit, pricing_mode, amount_required,
                  accepted_total, unit, requester_id, created_at, is_deleted, version)
-            VALUES (:rid, 'race test', 'open', :budget, :ppu, 'per_unit',
+            VALUES (:rid, 'race test', 'OPEN', :budget, :ppu, 'PER_UNIT',
                     :amt, 0, 'row', :uid, now(), false, 1)
         """), {
             "rid": ids["request_id"],
@@ -81,7 +83,7 @@ def _seed(engine, ids: dict, amount_required: int = 100):
                 INSERT INTO submissions
                     (id, request_id, provider_id, status, validated_amount, offered_amount,
                      accepted_amount, content_link, created_at, is_deleted, version)
-                VALUES (:sid, :rid, :uid, 'validated', :va, :va, 0,
+                VALUES (:sid, :rid, :uid, 'VALIDATED', :va, :va, 0,
                         'test.csv', now(), false, 1)
             """), {
                 "sid": ids[sid_key],

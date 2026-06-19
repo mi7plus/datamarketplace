@@ -1,5 +1,13 @@
 # tests/test_cross_provider_dedup.py
 # F3: cross-provider deduplication via AcceptedKey table
+#
+# NOTE: The TestCrossProviderDedup cases that re-implement the overlap arithmetic
+# inline (test_*_overlap_*) are FAST SMOKE CHECKS only — they do not exercise the
+# real accept_submission persistence path and cannot reproduce the uq_accepted_key
+# IntegrityError that F7 fixed. Authoritative coverage (partial/no/full overlap,
+# correct keys persisted, no 500) lives in tests/test_dedup_real_db.py against a
+# real Postgres. The two cases here that DO call accept_submission with a mock DB
+# (key persistence + total-excludes-overlap) remain valid unit checks.
 
 import hashlib
 import uuid

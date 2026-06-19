@@ -141,13 +141,19 @@ def accept_submission(
     # Invariant: validated_amount must be ≥ 0
     assert submission.validated_amount >= 0, "validated_amount must be non-negative"
 
-    remaining = (request.amount_required or 0) - (request.accepted_total or 0)
-    eligible = submission.validated_amount
+    remaining = max(0, (request.amount_required or 0) - (request.accepted_total or 0))
 
-    # Cross-provider dedup (F3): subtract records whose key-hash was already accepted
-    # for this request. Only active when the spec declares a unique_key AND this
-    # submission has key_hashes stored (i.e. the spec had a unique_key at ingest time).
-    overlap = 0
+    # Cross-provider dedup (F3/F7): credit only the records whose key-hash has NOT
+    # already been accepted for this request, capped at remaining capacity. We derive
+    # `accepted` from this exact set (`creditable`) and later persist that same set —
+    # so the count and the rows written to accepted_keys can never disagree.
+    #
+    # The previous implementation computed an overlap *count* but then persisted
+    # key_hashes[:accepted] (the FIRST `accepted` hashes). On partial overlap those
+    # leading hashes can be the already-accepted ones, which both corrupts future
+    # dedup and violates uq_accepted_key (IntegrityError → 500). Keeping submission
+    # order and filtering by membership fixes both.
+    creditable: list[str] | None = None
     if getattr(submission, "key_hashes", None):
         already_accepted = {
             row.key_hash
@@ -155,10 +161,11 @@ def accept_submission(
             .filter(AcceptedKey.request_id == str(request.id))
             .all()
         }
-        overlap = sum(1 for h in submission.key_hashes if h in already_accepted)
-        eligible = max(0, eligible - overlap)
-
-    accepted = min(eligible, remaining)
+        new_hashes = [h for h in submission.key_hashes if h not in already_accepted]
+        creditable = new_hashes[:remaining]
+        accepted = len(creditable)
+    else:
+        accepted = min(submission.validated_amount, remaining)
 
     ppu_raw = request.price_per_unit or (
         (request.budget / request.amount_required) if request.amount_required else 0
@@ -189,9 +196,11 @@ def accept_submission(
     submission = transition_submission(submission, new_status, db, commit=False)
     request = _recalculate_request_status(request, db, commit=False)
 
-    # Persist newly-accepted key-hashes so future submissions see them as duplicates.
-    if accepted > 0 and getattr(submission, "key_hashes", None):
-        for kh in submission.key_hashes[:accepted]:
+    # Persist the exact set we credited so future submissions see them as duplicates.
+    # `creditable` already excludes already-accepted hashes and is capped at remaining,
+    # so len(creditable) == accepted and no row can collide with uq_accepted_key.
+    if creditable:
+        for kh in creditable:
             db.add(AcceptedKey(request_id=request.id, key_hash=kh))
 
     db.flush()
