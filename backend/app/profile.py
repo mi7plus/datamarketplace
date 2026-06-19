@@ -17,18 +17,18 @@ def create_or_update_profile(
     # Check if user already has a profile
     existing_profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
 
+    profile_fields = profile_data.dict(exclude_unset=True, exclude={"email"})
+
     if existing_profile:
-        # Update existing profile
-        for field, value in profile_data.dict(exclude_unset=True).items():
+        for field, value in profile_fields.items():
             setattr(existing_profile, field, value)
         db.commit()
         db.refresh(existing_profile)
         return {"message": "Profile updated", "profile": existing_profile}
 
-    # Create new profile
     new_profile = UserProfile(
         user_id=current_user.id,
-        **profile_data.dict()
+        **profile_data.dict(exclude={"email"})
     )
     db.add(new_profile)
     db.commit()
@@ -42,24 +42,22 @@ def get_profile(
 ):
     profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
     if not profile:
-        # Return empty/default values instead of 404
         return {
             "user_type": "",
             "firstName": "",
             "lastName": "",
             "companyName": "",
-            "email": "",
+            "email": current_user.email,
             "phone": "",
             "address": ""
         }
 
-    # Convert SQLAlchemy object to dict for Pydantic model
     return ProfileCreate(
-        user_type=profile.user_type,
+        user_type=profile.user_type or "",
         firstName=profile.first_name,
         lastName=profile.last_name,
         companyName=profile.company_name,
-        email=profile.email,
+        email=current_user.email,
         phone=profile.phone,
         address=profile.address
     )

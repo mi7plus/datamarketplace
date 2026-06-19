@@ -6,18 +6,18 @@ from app.requests import router as requests_router
 from app.submissions import router as submissions_router
 from app.profile import router as profile_router
 from dotenv import load_dotenv
+from pathlib import Path
 import os
+
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")  # load variables from .env
+frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 app = FastAPI(title="DataMarketplace API")
 
-load_dotenv()  # load variables from .env
-frontend_url = os.getenv("FRONTEND_URL")
-
-
 # Allow CORS
 origins = [
-    frontend_url
-    # you can add more origins here, or use "*" for any origin (not recommended for production)
+    frontend_url,
+    "http://localhost:3000",
 ]
 
 app.add_middleware(
