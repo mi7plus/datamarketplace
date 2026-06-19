@@ -1,6 +1,7 @@
 # app/schemas.py
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional
+from uuid import UUID
 
 # Auth
 class RegisterSchema(BaseModel):
@@ -25,9 +26,9 @@ class DataRequestCreateSchema(BaseModel):
 
 # Submissions
 class SubmissionCreateSchema(BaseModel):
-    request_id: int
+    request_id: UUID
     content_link: str
-    amount_provided: int
+    offered_amount: int  # what the provider claims; accepted_amount is set by buyer at acceptance
 
 class ProfileCreate(BaseModel):
     user_type: str = Field(..., alias="user_type")      # frontend already sends this correctly

@@ -118,7 +118,8 @@ class Submission(BaseModel):
     request_id = Column(UUID(as_uuid=True), ForeignKey("data_requests.id"))
     provider_id = Column(UUID(as_uuid=True), ForeignKey("user_auth.id", ondelete="CASCADE"))
     content_link = Column(String)  # could be URL, file path, etc.
-    accepted_amount = Column(Integer, default=0)
+    offered_amount = Column(Integer, default=0)   # declared by provider at submit
+    accepted_amount = Column(Integer, default=0)  # set by buyer at acceptance (Phase 4)
     request = relationship("DataRequest", back_populates="submissions")
     provider = relationship("UserAuth", back_populates="submissions")
     status = Column(

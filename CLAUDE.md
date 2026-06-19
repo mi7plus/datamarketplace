@@ -8,6 +8,10 @@ A two-sided data marketplace where **requesters** post data collection bounties 
 
 ---
 
+Active roadmap: see datamarketplace-implementation-plan.md. Work it phase by phase.
+
+Core design decision: requests are priced per unit against amount_required, budget-capped. Multiple/partial submissions and over-delivery all derive from this — don't reintroduce single-winner bounty assumptions.
+
 ## Running the Project
 
 ### Backend (FastAPI on port 3001)
@@ -139,9 +143,24 @@ NUXT_PUBLIC_API_BASE=http://localhost:3001   # optional, this is the default
 
 ---
 
-## Known Gaps / TODOs in the Code
+## Implementation Plan Progress
 
-- `submissions.py` hardcodes `provider_id=1` — needs replacing with `current_user.id` from the JWT dependency.
-- `requests.py` routes are not auth-protected — `get_current_user` dependency is missing.
-- `ProfileCreate` schema maps camelCase aliases (`firstName`, `lastName`, `companyName`) to snake_case DB columns; the `email` field on the profile schema is separate from `UserAuth.email` and is not automatically synced.
-- `routes.py` in `backend/app/` is a stub/scratch file — it is not mounted in `main.py` and should not be confused with the active routers.
+Active roadmap: `datamarketplace-implementation-plan.md`. Work phase by phase. See `PLAN_NOTES.md` for Phase 0 findings.
+
+| Phase | Status | Notes |
+|---|---|---|
+| Phase 0 — Hygiene & bug fixes | ✅ Done | Secrets gitignored, bugs fixed, `routes.py` deleted |
+| Phase 1 — Alembic + model + lifecycles | 🔜 Next | Set up Alembic before any further schema changes |
+| Phase 2 — Structured request spec & creation flow | ⏳ Pending | |
+| Phase 3 — Submission + ingest validation | ⏳ Pending | |
+| Phase 4 — Fulfilment engine | ⏳ Pending | Core MVP value |
+| Phase 5 — Escrow & payments (Stripe) | ⏳ Pending | |
+| Phase 6 — Gated delivery (MinIO) | ⏳ Pending | |
+| Phase 7 — Reputation & disputes | ⏳ Pending | |
+| Phase 8 — GDPR & licensing | ⏳ Pending | |
+
+## Known Gaps / TODOs
+
+- `ProfileCreate` schema maps camelCase aliases (`firstName`, `lastName`, `companyName`) to snake_case DB columns; `email` is read from `UserAuth` (not stored on `UserProfile`).
+- `requests.py` `list_requests` is unauthenticated (intentional — browsing is public).
+- **Phase 1 is blocking** — do not use `Base.metadata.create_all` for further schema changes; Alembic must be set up first.
