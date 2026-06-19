@@ -5,6 +5,9 @@ from app.auth import router as auth_router
 from app.requests import router as requests_router
 from app.submissions import router as submissions_router
 from app.profile import router as profile_router
+from app.webhooks import router as webhooks_router
+from app.reviews import router as reviews_router
+from app.disputes import router as disputes_router
 from dotenv import load_dotenv
 from pathlib import Path
 import os
@@ -32,3 +35,6 @@ app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(requests_router, prefix="/requests", tags=["requests"])
 app.include_router(submissions_router, prefix="/submissions", tags=["submissions"])
 app.include_router(profile_router, prefix="/profile", tags=["profile"])
+app.include_router(webhooks_router, prefix="/webhooks", tags=["webhooks"])
+app.include_router(reviews_router, prefix="/reviews", tags=["reviews"])
+app.include_router(disputes_router, prefix="/disputes", tags=["disputes"])

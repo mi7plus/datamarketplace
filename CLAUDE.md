@@ -100,6 +100,8 @@ cd backend
 | `seed.py` | Seeds `licenses` table with standard license options — run once |
 | `ingest.py` | CSV/JSONL validation engine: schema check, count, dedup, sample, SHA-256 hash |
 | `storage.py` | Storage abstraction (`LocalStorage` now, `MinioStorage` in Phase 6) — `get_storage()` singleton |
+| `payments.py` | `PaymentProvider` ABC; `FakePaymentProvider` (default) + `StripePaymentProvider`; `append_ledger`; `ledger_balance`; `get_payment_provider()` singleton |
+| `webhooks.py` | `POST /webhooks/stripe` — signature-verified Stripe webhook handler |
 
 **Key design decisions:**
 - All models inherit `BaseModel` which provides a UUID primary key, `created_at`, `updated_at`, `is_deleted`, and `version`.
@@ -111,7 +113,8 @@ cd backend
 
 ```
 /auth/*        → auth.py
-/requests/*    → requests.py
+/profile/*     → profile.py  (includes /stripe-connect, /stripe-status)
+/requests/*    → requests.py  (includes /fund, /close, /ledger)
 /submissions/* → submissions.py
 /profile/*     → profile.py
 ```
@@ -175,11 +178,11 @@ Active roadmap: `datamarketplace-implementation-plan.md`. Work phase by phase. S
 | Phase 1 — Alembic + model + lifecycles | ✅ Done | Alembic wired; models extended; state machines in `lifecycle.py`; 18 tests passing |
 | Phase 2 — Structured request spec & creation flow | ✅ Done | Spec schema, column editor, live progress bar, real API in composable |
 | Phase 3 — Submission + ingest validation | ✅ Done | File upload, CSV/JSONL validator, dedup, sample, SHA-256 hash; 31 tests passing |
-| Phase 4 — Fulfilment engine | ⏳ Pending | Core MVP value |
-| Phase 5 — Escrow & payments (Stripe) | ⏳ Pending | |
-| Phase 6 — Gated delivery (MinIO) | ⏳ Pending | |
-| Phase 7 — Reputation & disputes | ⏳ Pending | |
-| Phase 8 — GDPR & licensing | ⏳ Pending | |
+| Phase 4 — Fulfilment engine | ✅ Done | `POST /submissions/{id}/accept` with `SELECT FOR UPDATE` + optimistic lock; `POST /{id}/reject`; expiry endpoint; buyer review UI with sample preview and accept/reject buttons; 40 tests passing |
+| Phase 5 — Escrow & payments (Stripe) | ✅ Done | `FakePaymentProvider` + `StripePaymentProvider` behind `get_payment_provider()`; `POST /requests/{id}/fund` (DRAFT→OPEN + hold escrow); release on accept; refund on expire/close; `GET /requests/{id}/ledger`; Stripe Connect onboarding (`GET /profile/stripe-connect`); `POST /webhooks/stripe`; ledger invariant tests; 49 tests passing |
+| Phase 6 — Gated delivery (MinIO) | ✅ Done | `MinioStorage` (private bucket, pre-signed URLs) + `LocalStorage` fallback in `storage.py`; `GET /submissions/{id}/download` (PAID-only gate); `GET /submissions/{id}/sample` (pre-payment preview); `DownloadButton.vue`; sample preview on provider history; 62 tests passing |
+| Phase 7 — Reputation & disputes | ✅ Done | `Review` + `Dispute` models + migration; `POST /reviews/` (PAID-only, one per party per submission); `GET /reviews/user/{id}` (public); `POST /disputes/{id}/open` (buyer); `POST /disputes/{id}/resolve` (admin); `GET /disputes/` (admin queue); `UserAnalytics` reputation_score + transaction counters wired; `DisputeButton.vue`, `ReviewForm.vue`; reputation panel on profile; 75 tests passing |
+| Phase 8 — GDPR & licensing | ✅ Done | Provider warranty checkboxes in `SubmissionForm.vue` (enforced server-side, stored in `owner_signature`); `POST /submissions/{id}/takedown` (admin, soft-delete + expire URL gate); `access_expiry` gate on download endpoint (410 Gone); `license_name` in `DataRequestResponseSchema` via `model_validate`; license shown on request detail; `terms.vue` + `privacy.vue` filled with GDPR-aware placeholder text; 84 tests passing |
 
 ## Known Gaps / TODOs
 

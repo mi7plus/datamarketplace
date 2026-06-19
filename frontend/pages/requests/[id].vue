@@ -4,45 +4,104 @@ import { useRoute } from 'vue-router'
 import PageWrapper from '~/components/layout/PageWrapper.vue'
 import BackButton from '~/components/BackButton.vue'
 import SubmissionForm from '~/components/requests/SubmissionForm.vue'
+import DownloadButton from '~/components/submissions/DownloadButton.vue'
+import DisputeButton from '~/components/submissions/DisputeButton.vue'
+import ReviewForm from '~/components/submissions/ReviewForm.vue'
 import { useRequests } from '~/composables/useRequests'
 import { useAuthStore } from '~/stores/auth'
 import { useApi } from '~/composables/useApi'
+import { useRuntimeConfig } from '#app'
 
 const route = useRoute()
 const { fetchRequest } = useRequests()
 const auth = useAuthStore()
 const api = useApi()
+const config = useRuntimeConfig()
 
 const request = ref<any>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
 const submissions = ref<any[]>([])
+const actionError = ref<string | null>(null)
+const actioning = ref<string | null>(null)  // submission id being actioned
+const ledger = ref<any>(null)
+const funding = ref(false)
+
+async function loadRequest() {
+    const data = await fetchRequest(route.params.id as string)
+    if (data) request.value = data
+    else error.value = 'Request not found'
+}
 
 async function loadSubmissions() {
     try {
         submissions.value = await api.get(`/submissions/request/${route.params.id}`)
-    } catch { /* not the requester — ignore */ }
+    } catch { /* visitor or provider — no access to buyer list */ }
 }
 
 onMounted(async () => {
-    const data = await fetchRequest(route.params.id as string)
-    if (data) {
-        request.value = data
-        await loadSubmissions()
-    } else {
-        error.value = 'Request not found'
-    }
+    await loadRequest()
+    if (request.value) await Promise.all([loadSubmissions(), loadLedger()])
     loading.value = false
 })
 
-const submissionStatusColour: Record<string, string> = {
-    validated: 'bg-blue-100 text-blue-700',
-    accepted: 'bg-green-100 text-green-700',
-    partially_accepted: 'bg-yellow-100 text-yellow-700',
-    rejected: 'bg-red-100 text-red-500',
-    rejected_invalid: 'bg-red-100 text-red-600',
-    paid: 'bg-emerald-100 text-emerald-700',
-    disputed: 'bg-orange-100 text-orange-700',
+async function doAction(submissionId: string, action: 'accept' | 'reject') {
+    actioning.value = submissionId
+    actionError.value = null
+    try {
+        const res = await fetch(
+            `${config.public.apiBase}/submissions/${submissionId}/${action}`,
+            { method: 'POST', headers: { Authorization: `Bearer ${auth.token}` } }
+        )
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.detail || `${action} failed`)
+        // Refresh both to get updated accepted_total on the request
+        await Promise.all([loadRequest(), loadSubmissions()])
+    } catch (e: any) {
+        actionError.value = e.message
+    } finally {
+        actioning.value = null
+    }
+}
+
+async function expireRequest() {
+    if (!confirm('Close this request and refund unspent budget?')) return
+    actionError.value = null
+    try {
+        await fetch(
+            `${config.public.apiBase}/submissions/requests/${request.value.id}/expire`,
+            { method: 'POST', headers: { Authorization: `Bearer ${auth.token}` } }
+        )
+        await Promise.all([loadRequest(), loadLedger()])
+    } catch (e: any) {
+        actionError.value = e.message
+    }
+}
+
+async function fundRequest() {
+    if (!confirm(`Fund this request and hold $${request.value.budget?.toLocaleString()} in escrow?`)) return
+    funding.value = true
+    actionError.value = null
+    try {
+        const res = await fetch(
+            `${config.public.apiBase}/requests/${request.value.id}/fund`,
+            { method: 'POST', headers: { Authorization: `Bearer ${auth.token}` } }
+        )
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.detail || 'Fund failed')
+        await Promise.all([loadRequest(), loadLedger()])
+    } catch (e: any) {
+        actionError.value = e.message
+    } finally {
+        funding.value = false
+    }
+}
+
+async function loadLedger() {
+    if (auth.user?.role !== 'requester') return
+    try {
+        ledger.value = await api.get(`/requests/${route.params.id}/ledger`)
+    } catch { /* only requester can see ledger */ }
 }
 
 const fillPct = computed(() => {
@@ -50,10 +109,17 @@ const fillPct = computed(() => {
     return Math.min(100, Math.round((request.value.accepted_total / request.value.amount_required) * 100))
 })
 
-const remaining = computed(() => {
-    if (!request.value) return 0
-    return (request.value.amount_required ?? 0) - (request.value.accepted_total ?? 0)
-})
+const remaining = computed(() =>
+    (request.value?.amount_required ?? 0) - (request.value?.accepted_total ?? 0)
+)
+
+const validatedSubmissions = computed(() =>
+    submissions.value.filter(s => s.status === 'validated')
+)
+
+const decidedSubmissions = computed(() =>
+    submissions.value.filter(s => s.status !== 'validated')
+)
 
 const statusColour: Record<string, string> = {
     draft: 'bg-gray-100 text-gray-600',
@@ -61,6 +127,17 @@ const statusColour: Record<string, string> = {
     partially_fulfilled: 'bg-yellow-100 text-yellow-700',
     completed: 'bg-green-100 text-green-700',
     expired: 'bg-red-100 text-red-500',
+    review: 'bg-purple-100 text-purple-700',
+}
+
+const subColour: Record<string, string> = {
+    validated: 'bg-blue-100 text-blue-700',
+    accepted: 'bg-green-100 text-green-700',
+    partially_accepted: 'bg-yellow-100 text-yellow-700',
+    rejected: 'bg-red-100 text-red-500',
+    rejected_invalid: 'bg-red-100 text-red-600',
+    paid: 'bg-emerald-100 text-emerald-700',
+    disputed: 'bg-orange-100 text-orange-700',
 }
 </script>
 
@@ -79,10 +156,28 @@ const statusColour: Record<string, string> = {
                     <h1 class="text-2xl font-bold">{{ request.title }}</h1>
                     <p v-if="request.description" class="text-gray-500 mt-2">{{ request.description }}</p>
                 </div>
-                <span class="text-sm px-3 py-1 rounded-full shrink-0 mt-1"
-                    :class="statusColour[request.status] ?? 'bg-gray-100 text-gray-600'">
-                    {{ request.status.replace('_', ' ') }}
-                </span>
+                <div class="flex flex-col items-end gap-2 shrink-0">
+                    <span class="text-sm px-3 py-1 rounded-full"
+                        :class="statusColour[request.status] ?? 'bg-gray-100 text-gray-600'">
+                        {{ request.status.replace(/_/g, ' ') }}
+                    </span>
+                    <!-- Fund & Open (requester, DRAFT only) -->
+                    <button
+                        v-if="request.status === 'draft' && auth.user?.role === 'requester'"
+                        @click="fundRequest"
+                        :disabled="funding"
+                        class="px-4 py-1.5 rounded bg-blue-600 text-white text-sm
+                               hover:bg-blue-700 disabled:opacity-50">
+                        {{ funding ? 'Processing…' : `Fund $${request.budget?.toLocaleString()} & Open` }}
+                    </button>
+                    <!-- Close early -->
+                    <button
+                        v-if="['open','partially_fulfilled'].includes(request.status) && auth.user?.role === 'requester'"
+                        @click="expireRequest"
+                        class="text-xs text-red-500 hover:underline">
+                        Close & refund
+                    </button>
+                </div>
             </div>
 
             <!-- Fulfilment progress -->
@@ -121,6 +216,10 @@ const statusColour: Record<string, string> = {
                     </template>
                     <dt class="text-gray-500">Format</dt>
                     <dd class="uppercase">{{ request.required_format }}</dd>
+                    <template v-if="request.license_name">
+                        <dt class="text-gray-500">License</dt>
+                        <dd>{{ request.license_name }}</dd>
+                    </template>
                 </dl>
             </div>
 
@@ -152,39 +251,172 @@ const statusColour: Record<string, string> = {
                 </p>
             </div>
 
-            <!-- Provider: inline submission form -->
+            <!-- ============================================================
+                 ESCROW LEDGER (requester only)
+                 ============================================================ -->
+            <div v-if="ledger" class="border rounded-lg p-4 bg-white space-y-3">
+                <h2 class="font-semibold text-sm text-gray-700 uppercase tracking-wide">Escrow</h2>
+                <dl class="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1 text-sm">
+                    <dt class="text-gray-500">Held</dt>
+                    <dd class="font-medium">${{ ledger.balance.held?.toLocaleString() }}</dd>
+                    <dt class="text-gray-500">Released</dt>
+                    <dd class="text-green-700">${{ ledger.balance.released?.toLocaleString() }}</dd>
+                    <dt class="text-gray-500">Refunded</dt>
+                    <dd class="text-blue-700">${{ ledger.balance.refunded?.toLocaleString() }}</dd>
+                    <dt class="text-gray-500">Remaining</dt>
+                    <dd class="font-semibold">${{ ledger.balance.remaining?.toLocaleString() }}</dd>
+                </dl>
+                <details class="text-xs">
+                    <summary class="cursor-pointer text-gray-500 hover:text-gray-700">
+                        Ledger entries ({{ ledger.entries.length }})
+                    </summary>
+                    <div class="mt-2 divide-y">
+                        <div v-for="e in ledger.entries" :key="e.id"
+                            class="flex justify-between py-1 text-gray-600">
+                            <span class="capitalize font-medium" :class="{
+                                'text-gray-700': e.type === 'hold',
+                                'text-green-700': e.type === 'release',
+                                'text-blue-700': e.type === 'refund',
+                            }">{{ e.type }}</span>
+                            <span>${{ e.amount }}</span>
+                            <span class="text-gray-400 font-mono">{{ e.external_ref?.slice(0, 20) }}</span>
+                        </div>
+                    </div>
+                </details>
+            </div>
+
+            <!-- ============================================================
+                 BUYER REVIEW — VALIDATED submissions awaiting decision
+                 ============================================================ -->
+            <div v-if="validatedSubmissions.length" class="space-y-3">
+                <h2 class="font-semibold text-sm text-gray-700 uppercase tracking-wide">
+                    Awaiting Review ({{ validatedSubmissions.length }})
+                </h2>
+
+                <p v-if="actionError" class="text-red-500 text-sm">{{ actionError }}</p>
+
+                <div v-for="s in validatedSubmissions" :key="s.id"
+                    class="border-2 border-blue-200 rounded-lg p-4 bg-blue-50 space-y-3">
+
+                    <div class="flex justify-between items-start">
+                        <div class="text-xs font-mono text-gray-400">{{ s.id.slice(0, 8) }}…</div>
+                        <span class="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                            validated
+                        </span>
+                    </div>
+
+                    <!-- Validation summary -->
+                    <dl class="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1 text-sm">
+                        <dt class="text-gray-500">Offered</dt>
+                        <dd class="font-medium">{{ s.offered_amount?.toLocaleString() }} {{ request.unit }}</dd>
+                        <dt class="text-gray-500">Validated</dt>
+                        <dd class="font-medium text-blue-700">{{ s.validated_amount?.toLocaleString() }} {{ request.unit }}</dd>
+                        <dt class="text-gray-500">Remaining capacity</dt>
+                        <dd class="font-medium text-green-700">{{ remaining.toLocaleString() }} {{ request.unit }}</dd>
+                        <dt class="text-gray-500">Would accept</dt>
+                        <dd class="font-medium">
+                            {{ Math.min(s.validated_amount ?? 0, remaining).toLocaleString() }} {{ request.unit }}
+                            <span v-if="(s.validated_amount ?? 0) > remaining" class="text-xs text-yellow-600 ml-1">
+                                (capped — over-delivery)
+                            </span>
+                        </dd>
+                    </dl>
+
+                    <!-- Sample data preview -->
+                    <details v-if="s.validation_report?.sample?.length" class="text-xs">
+                        <summary class="cursor-pointer text-blue-700 hover:underline">
+                            Preview sample ({{ s.validation_report.sample.length }} rows)
+                        </summary>
+                        <div class="overflow-x-auto mt-2">
+                            <table class="text-xs border-collapse w-full">
+                                <thead>
+                                    <tr class="bg-gray-100">
+                                        <th v-for="k in Object.keys(s.validation_report.sample[0])" :key="k"
+                                            class="border px-2 py-1 text-left font-mono font-normal text-gray-600">
+                                            {{ k }}
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="(row, i) in s.validation_report.sample" :key="i">
+                                        <td v-for="(val, key) in row" :key="key"
+                                            class="border px-2 py-1 font-mono">
+                                            {{ val }}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+
+                    <!-- Accept / Reject buttons -->
+                    <div class="flex gap-3 pt-1">
+                        <button
+                            @click="doAction(s.id, 'accept')"
+                            :disabled="actioning === s.id || remaining === 0"
+                            class="px-4 py-1.5 rounded bg-green-600 text-white text-sm
+                                   hover:bg-green-700 disabled:opacity-50">
+                            {{ actioning === s.id ? 'Processing…' : 'Accept' }}
+                        </button>
+                        <button
+                            @click="doAction(s.id, 'reject')"
+                            :disabled="actioning === s.id"
+                            class="px-4 py-1.5 rounded border border-red-300 text-red-600
+                                   text-sm hover:bg-red-50 disabled:opacity-50">
+                            Reject
+                        </button>
+                        <span v-if="remaining === 0" class="text-xs text-gray-400 self-center">
+                            Target already met
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================================
+                 DECIDED submissions (accepted / rejected / paid / etc.)
+                 ============================================================ -->
+            <div v-if="decidedSubmissions.length" class="border rounded-lg p-4 bg-white space-y-3">
+                <h2 class="font-semibold text-sm text-gray-700 uppercase tracking-wide">
+                    Decided Submissions ({{ decidedSubmissions.length }})
+                </h2>
+                <div v-for="s in decidedSubmissions" :key="s.id"
+                    class="border rounded p-3 space-y-2 text-sm">
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-400 text-xs font-mono">{{ s.id.slice(0, 8) }}…</span>
+                        <span class="text-xs px-2 py-0.5 rounded-full"
+                            :class="subColour[s.status] ?? 'bg-gray-100 text-gray-600'">
+                            {{ s.status.replace(/_/g, ' ') }}
+                        </span>
+                    </div>
+                    <dl class="grid grid-cols-4 gap-x-4 gap-y-1 text-xs text-gray-600">
+                        <dt>Offered</dt><dd>{{ s.offered_amount?.toLocaleString() }}</dd>
+                        <dt>Validated</dt><dd>{{ s.validated_amount?.toLocaleString() ?? '—' }}</dd>
+                        <dt>Accepted</dt><dd>{{ s.accepted_amount?.toLocaleString() ?? 0 }}</dd>
+                        <dt>Amount due</dt><dd>{{ s.amount_due != null ? `$${s.amount_due}` : '—' }}</dd>
+                    </dl>
+                    <!-- Download (PAID only) -->
+                    <div v-if="s.status === 'paid'" class="pt-1 flex flex-wrap gap-3 items-start">
+                        <DownloadButton :submission-id="s.id" />
+                        <ReviewForm :submission-id="s.id" @reviewed="loadSubmissions" />
+                    </div>
+
+                    <!-- Dispute (ACCEPTED / PARTIALLY_ACCEPTED) -->
+                    <div v-if="['accepted','partially_accepted'].includes(s.status)" class="pt-1">
+                        <DisputeButton :submission-id="s.id" @disputed="loadSubmissions" />
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================================
+                 PROVIDER: inline submission form
+                 ============================================================ -->
             <SubmissionForm
-                v-if="request.status === 'open' || request.status === 'partially_fulfilled'"
+                v-if="['open', 'partially_fulfilled'].includes(request.status)"
                 :request-id="request.id"
                 :request-spec="request.spec"
                 :unit="request.unit"
                 @submitted="loadSubmissions"
             />
-
-            <!-- Buyer: validated submissions list -->
-            <div v-if="submissions.length" class="border rounded-lg p-4 bg-white space-y-3">
-                <h2 class="font-semibold text-sm text-gray-700 uppercase tracking-wide">
-                    Submissions ({{ submissions.length }})
-                </h2>
-                <div v-for="s in submissions" :key="s.id"
-                    class="border rounded p-3 space-y-2 text-sm">
-                    <div class="flex justify-between items-center">
-                        <span class="text-gray-500 text-xs font-mono">{{ s.id.slice(0, 8) }}…</span>
-                        <span class="text-xs px-2 py-0.5 rounded-full"
-                            :class="submissionStatusColour[s.status] ?? 'bg-gray-100 text-gray-600'">
-                            {{ s.status.replace('_', ' ') }}
-                        </span>
-                    </div>
-                    <dl class="grid grid-cols-3 gap-x-4 gap-y-1 text-xs text-gray-600">
-                        <dt>Offered</dt><dd>{{ s.offered_amount?.toLocaleString() }}</dd>
-                        <dd />
-                        <dt>Validated</dt><dd>{{ s.validated_amount?.toLocaleString() ?? '—' }}</dd>
-                        <dd />
-                        <dt>Accepted</dt><dd>{{ s.accepted_amount?.toLocaleString() ?? 0 }}</dd>
-                        <dd />
-                    </dl>
-                </div>
-            </div>
 
         </div>
     </PageWrapper>

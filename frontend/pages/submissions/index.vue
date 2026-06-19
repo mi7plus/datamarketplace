@@ -91,6 +91,37 @@ const statusColour: Record<string, string> = {
                         </div>
                     </div>
                 </details>
+
+                <!-- Disputed badge -->
+                <p v-if="s.status === 'disputed'" class="text-xs text-orange-600 font-medium">
+                    ⚠ A dispute is open on this submission — awaiting admin review.
+                </p>
+
+                <!-- Sample preview (visible to provider — same as what buyer sees) -->
+                <details v-if="s.validation_report?.sample?.length" class="text-xs mt-1">
+                    <summary class="cursor-pointer text-blue-600 hover:underline">
+                        Sample preview ({{ s.validation_report.sample.length }} rows)
+                    </summary>
+                    <div class="overflow-x-auto mt-2">
+                        <table class="text-xs border-collapse w-full">
+                            <thead>
+                                <tr class="bg-gray-100">
+                                    <th v-for="k in Object.keys(s.validation_report.sample[0])" :key="k"
+                                        class="border px-2 py-1 text-left font-mono font-normal text-gray-600">
+                                        {{ k }}
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(row, i) in s.validation_report.sample" :key="i">
+                                    <td v-for="(val, key) in row" :key="key"
+                                        class="border px-2 py-1 font-mono">{{ val }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="text-gray-400 mt-1">This is what the buyer sees before payment.</p>
+                </details>
             </div>
         </div>
     </PageWrapper>

@@ -176,6 +176,36 @@ class UserAnalytics(BaseModel):
     __table_args__ = (Index("idx_user_analytics_user_id", "user_id"),)
 
 
+class Review(BaseModel):
+    """1–5 star rating left by either party after a PAID submission."""
+    __tablename__ = "reviews"
+    request_id = Column(UUID(as_uuid=True), ForeignKey("data_requests.id"), nullable=False)
+    submission_id = Column(UUID(as_uuid=True), ForeignKey("submissions.id"), nullable=False)
+    author_id = Column(UUID(as_uuid=True), ForeignKey("user_auth.id", ondelete="CASCADE"), nullable=False)
+    subject_id = Column(UUID(as_uuid=True), ForeignKey("user_auth.id", ondelete="CASCADE"), nullable=False)
+    rating = Column(Integer, nullable=False)   # 1–5
+    comment = Column(Text)
+    author = relationship("UserAuth", foreign_keys=[author_id])
+    subject = relationship("UserAuth", foreign_keys=[subject_id])
+    __table_args__ = (
+        Index("idx_review_subject", "subject_id"),
+        Index("idx_review_submission", "submission_id"),
+    )
+
+
+class Dispute(BaseModel):
+    """Buyer-opened dispute pausing escrow release for one submission."""
+    __tablename__ = "disputes"
+    submission_id = Column(UUID(as_uuid=True), ForeignKey("submissions.id"), nullable=False, unique=True)
+    opened_by_id = Column(UUID(as_uuid=True), ForeignKey("user_auth.id", ondelete="CASCADE"), nullable=False)
+    reason = Column(Text, nullable=False)
+    notes = Column(Text)          # admin resolution notes
+    status = Column(String, default="open")   # "open" | "resolved_paid" | "resolved_rejected"
+    submission = relationship("Submission")
+    opened_by = relationship("UserAuth")
+    __table_args__ = (Index("idx_dispute_submission", "submission_id"),)
+
+
 class Ledger(BaseModel):
     """Append-only escrow ledger. Derive balances by summing; never mutate rows."""
     __tablename__ = "ledger"

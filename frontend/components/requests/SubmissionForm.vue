@@ -15,6 +15,10 @@ const submitting = ref(false)
 const error = ref<string | null>(null)
 const result = ref<any>(null)
 
+// GDPR / warranty checkboxes — both required before submitting
+const warrantyRights = ref(false)       // I have the right to sell/share this data
+const warrantyPrivacy = ref(false)      // No unconsented personal data / properly anonymised
+
 const fileError = computed(() => {
     if (!file.value) return null
     const ext = file.value.name.split('.').pop()?.toLowerCase()
@@ -22,6 +26,8 @@ const fileError = computed(() => {
     if (file.value.size > 100 * 1024 * 1024) return 'File must be under 100 MB'
     return null
 })
+
+const warrantiesOk = computed(() => warrantyRights.value && warrantyPrivacy.value)
 
 function onFileChange(e: Event) {
     const input = e.target as HTMLInputElement
@@ -31,7 +37,7 @@ function onFileChange(e: Event) {
 }
 
 async function submit() {
-    if (!file.value || fileError.value) return
+    if (!file.value || fileError.value || !warrantiesOk.value) return
     submitting.value = true
     error.value = null
     result.value = null
@@ -40,6 +46,7 @@ async function submit() {
         const fd = new FormData()
         fd.append('request_id', props.requestId)
         fd.append('offered_amount', String(offeredAmount.value))
+        fd.append('warranted', 'true')   // backend stores timestamp in owner_signature
         fd.append('file', file.value)
 
         const res = await fetch(`${config.public.apiBase}/submissions/`, {
@@ -96,9 +103,35 @@ async function submit() {
                 class="w-40 border rounded px-3 py-2 text-sm" />
         </div>
 
+        <!-- Provider warranties (GDPR / legal — both required) -->
+        <div class="border border-amber-200 rounded-lg p-4 bg-amber-50 space-y-3 text-sm">
+            <p class="font-medium text-amber-800">Provider warranties — required before submitting</p>
+
+            <label class="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" v-model="warrantyRights" class="mt-0.5 shrink-0" />
+                <span class="text-gray-700">
+                    I have the legal right to sell or share this dataset. I am not violating any
+                    contract, copyright, or intellectual property restriction.
+                </span>
+            </label>
+
+            <label class="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" v-model="warrantyPrivacy" class="mt-0.5 shrink-0" />
+                <span class="text-gray-700">
+                    This dataset contains no unconsented personal data. Any personal data has been
+                    properly anonymised or pseudonymised in compliance with applicable law (including GDPR).
+                </span>
+            </label>
+
+            <p v-if="!warrantiesOk" class="text-xs text-amber-700">
+                Both warranties must be affirmed before you can submit.
+            </p>
+        </div>
+
         <p v-if="error" class="text-red-600 text-sm">{{ error }}</p>
 
-        <button @click="submit" :disabled="submitting || !file || !!fileError"
+        <button @click="submit"
+            :disabled="submitting || !file || !!fileError || !warrantiesOk"
             class="bg-blue-600 text-white px-5 py-2 rounded disabled:opacity-50 hover:bg-blue-700 text-sm">
             {{ submitting ? 'Validating & uploading…' : 'Submit Dataset' }}
         </button>

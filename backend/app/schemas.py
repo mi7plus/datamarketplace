@@ -108,9 +108,19 @@ class DataRequestResponseSchema(BaseModel):
     status: str
     accepted_total: Optional[int] = None
     requester_id: Optional[UUID] = None
+    license_id: Optional[UUID] = None
+    license_name: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+    @classmethod
+    def model_validate(cls, obj, **kw):
+        instance = super().model_validate(obj, **kw)
+        # Populate license_name from the ORM relationship if available
+        if hasattr(obj, "license") and obj.license:
+            instance.license_name = obj.license.name
+        return instance
 
 
 # ---------------------------------------------------------------------------
