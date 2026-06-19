@@ -22,6 +22,9 @@ interface _GlobalComponents {
   RequestsRequestForm: typeof import("../../components/requests/RequestForm.vue")['default']
   RequestsSubmissionCard: typeof import("../../components/requests/SubmissionCard.vue")['default']
   RequestsSubmissionForm: typeof import("../../components/requests/SubmissionForm.vue")['default']
+  SubmissionsDisputeButton: typeof import("../../components/submissions/DisputeButton.vue")['default']
+  SubmissionsDownloadButton: typeof import("../../components/submissions/DownloadButton.vue")['default']
+  SubmissionsReviewForm: typeof import("../../components/submissions/ReviewForm.vue")['default']
   NuxtWelcome: typeof import("../../node_modules/nuxt/dist/app/components/welcome.vue")['default']
   NuxtLayout: typeof import("../../node_modules/nuxt/dist/app/components/nuxt-layout")['default']
   NuxtErrorBoundary: typeof import("../../node_modules/nuxt/dist/app/components/nuxt-error-boundary.vue")['default']
@@ -53,6 +56,9 @@ interface _GlobalComponents {
   LazyRequestsRequestForm: LazyComponent<typeof import("../../components/requests/RequestForm.vue")['default']>
   LazyRequestsSubmissionCard: LazyComponent<typeof import("../../components/requests/SubmissionCard.vue")['default']>
   LazyRequestsSubmissionForm: LazyComponent<typeof import("../../components/requests/SubmissionForm.vue")['default']>
+  LazySubmissionsDisputeButton: LazyComponent<typeof import("../../components/submissions/DisputeButton.vue")['default']>
+  LazySubmissionsDownloadButton: LazyComponent<typeof import("../../components/submissions/DownloadButton.vue")['default']>
+  LazySubmissionsReviewForm: LazyComponent<typeof import("../../components/submissions/ReviewForm.vue")['default']>
   LazyNuxtWelcome: LazyComponent<typeof import("../../node_modules/nuxt/dist/app/components/welcome.vue")['default']>
   LazyNuxtLayout: LazyComponent<typeof import("../../node_modules/nuxt/dist/app/components/nuxt-layout")['default']>
   LazyNuxtErrorBoundary: LazyComponent<typeof import("../../node_modules/nuxt/dist/app/components/nuxt-error-boundary.vue")['default']>

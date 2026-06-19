@@ -22,6 +22,9 @@ export const RequestsRequestCard: typeof import("../components/requests/RequestC
 export const RequestsRequestForm: typeof import("../components/requests/RequestForm.vue")['default']
 export const RequestsSubmissionCard: typeof import("../components/requests/SubmissionCard.vue")['default']
 export const RequestsSubmissionForm: typeof import("../components/requests/SubmissionForm.vue")['default']
+export const SubmissionsDisputeButton: typeof import("../components/submissions/DisputeButton.vue")['default']
+export const SubmissionsDownloadButton: typeof import("../components/submissions/DownloadButton.vue")['default']
+export const SubmissionsReviewForm: typeof import("../components/submissions/ReviewForm.vue")['default']
 export const NuxtWelcome: typeof import("../node_modules/nuxt/dist/app/components/welcome.vue")['default']
 export const NuxtLayout: typeof import("../node_modules/nuxt/dist/app/components/nuxt-layout")['default']
 export const NuxtErrorBoundary: typeof import("../node_modules/nuxt/dist/app/components/nuxt-error-boundary.vue")['default']
@@ -53,6 +56,9 @@ export const LazyRequestsRequestCard: LazyComponent<typeof import("../components
 export const LazyRequestsRequestForm: LazyComponent<typeof import("../components/requests/RequestForm.vue")['default']>
 export const LazyRequestsSubmissionCard: LazyComponent<typeof import("../components/requests/SubmissionCard.vue")['default']>
 export const LazyRequestsSubmissionForm: LazyComponent<typeof import("../components/requests/SubmissionForm.vue")['default']>
+export const LazySubmissionsDisputeButton: LazyComponent<typeof import("../components/submissions/DisputeButton.vue")['default']>
+export const LazySubmissionsDownloadButton: LazyComponent<typeof import("../components/submissions/DownloadButton.vue")['default']>
+export const LazySubmissionsReviewForm: LazyComponent<typeof import("../components/submissions/ReviewForm.vue")['default']>
 export const LazyNuxtWelcome: LazyComponent<typeof import("../node_modules/nuxt/dist/app/components/welcome.vue")['default']>
 export const LazyNuxtLayout: LazyComponent<typeof import("../node_modules/nuxt/dist/app/components/nuxt-layout")['default']>
 export const LazyNuxtErrorBoundary: LazyComponent<typeof import("../node_modules/nuxt/dist/app/components/nuxt-error-boundary.vue")['default']>
