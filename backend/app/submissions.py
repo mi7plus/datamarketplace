@@ -148,32 +148,49 @@ def accept(
 ):
     """
     Allocate validated units from this submission against the request's remaining
-    capacity. Runs inside ONE transaction with a row-level lock on data_requests
-    so concurrent accepts can't double-spend the budget.
+    capacity. Runs inside ONE transaction with row-level locks on BOTH data_requests
+    AND submissions (acquired in that order — always request-first to prevent deadlocks).
 
-    This is the likeliest money bug — the lock is non-negotiable.
+    Double-accept protection: the submission is re-checked under the submission lock
+    AFTER the request lock is held, so two concurrent accepts of the same submission
+    serialise here and only the first proceeds.
+
+    This is the likeliest money bug — the lock order is non-negotiable.
     """
+    # Quick pre-check outside the lock (not the authoritative check — see below)
     submission = _get_submission_or_404(submission_id, db)
-    if submission.status != SubmissionStatus.VALIDATED:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Only VALIDATED submissions can be accepted (current: {submission.status})",
-        )
+    request_id = str(submission.request_id)
 
     # --- BEGIN critical section ---
-    # SELECT FOR UPDATE locks the request row for the duration of this transaction.
-    # Any concurrent accept for the same request blocks until this commit.
+    # Lock order: request first, then submission. Consistent everywhere → no deadlock.
     data_request = (
         db.execute(
             select(DataRequest)
-            .where(DataRequest.id == str(submission.request_id))
-            .with_for_update()          # row-level lock
+            .where(DataRequest.id == request_id)
+            .with_for_update()
         )
         .scalars()
         .first()
     )
     if not data_request:
         raise HTTPException(status_code=404, detail="Request not found")
+
+    # Re-load the submission under its own lock INSIDE the critical section.
+    # The pre-check above may have seen VALIDATED before a concurrent accept committed.
+    submission = (
+        db.execute(
+            select(Submission)
+            .where(Submission.id == submission_id)
+            .with_for_update()
+        )
+        .scalars()
+        .first()
+    )
+    if not submission or submission.status != SubmissionStatus.VALIDATED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Submission is no longer available for acceptance (status: {getattr(submission, 'status', 'not found')})",
+        )
 
     _require_request_owner(data_request, current_user)
 
