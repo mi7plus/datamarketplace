@@ -114,6 +114,16 @@ class DataRequestResponseSchema(BaseModel):
     class Config:
         from_attributes = True
 
+    @field_validator("deadline", mode="before")
+    @classmethod
+    def _coerce_deadline(cls, v):
+        # The ORM column is a DateTime; the response contract is an ISO string.
+        # Coerce so creating/reading a request with a deadline doesn't 500 on
+        # response validation.
+        if v is None or isinstance(v, str):
+            return v
+        return v.isoformat()
+
     @classmethod
     def model_validate(cls, obj, **kw):
         instance = super().model_validate(obj, **kw)

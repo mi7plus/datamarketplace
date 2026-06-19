@@ -294,10 +294,26 @@ def _release_and_pay(submission_id: str, db: Session) -> Submission:
     submission = mark_paid(submission, db)
     _increment_transactions(str(data_request.requester_id), successful=True, db=db)
     _increment_transactions(str(submission.provider_id), successful=True, db=db)
+
+    # Refund genuine surplus (rounding leftover / under-fill) to the buyer — but ONLY
+    # once no submissions remain awaiting release. Otherwise, on a COMPLETED request
+    # with several accepted submissions, releasing the first would see the others'
+    # not-yet-released amount_due as "remaining" and wrongly refund it (driving the
+    # ledger negative). The current submission is already PAID, so it's excluded here.
     if data_request.status == RequestStatus.COMPLETED:
-        balance = ledger_balance(db, data_request.id)
-        if balance["remaining"] > Decimal("0"):
-            payment.refund_to_buyer(data_request, balance["remaining"], db)
+        pending = (
+            db.query(Submission)
+            .filter(
+                Submission.request_id == str(data_request.id),
+                Submission.status.in_(ACCEPTED_STATUSES),
+                Submission.is_deleted == False,
+            )
+            .count()
+        )
+        if pending == 0:
+            balance = ledger_balance(db, data_request.id)
+            if balance["remaining"] > Decimal("0"):
+                payment.refund_to_buyer(data_request, balance["remaining"], db)
     db.commit()
     return submission
 
