@@ -38,3 +38,21 @@ app.include_router(profile_router, prefix="/profile", tags=["profile"])
 app.include_router(webhooks_router, prefix="/webhooks", tags=["webhooks"])
 app.include_router(reviews_router, prefix="/reviews", tags=["reviews"])
 app.include_router(disputes_router, prefix="/disputes", tags=["disputes"])
+
+
+# Background auto-release sweep: pays out ACCEPTED submissions whose acceptance
+# window has elapsed with no open dispute, even if the buyer never returns.
+_scheduler = None
+
+
+@app.on_event("startup")
+def _start_sweep():
+    global _scheduler
+    from app.sweep import start_scheduler
+    _scheduler = start_scheduler()
+
+
+@app.on_event("shutdown")
+def _stop_sweep():
+    if _scheduler is not None:
+        _scheduler.shutdown(wait=False)

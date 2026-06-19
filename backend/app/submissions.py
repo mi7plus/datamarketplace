@@ -259,6 +259,79 @@ def _release_and_pay(submission: Submission, data_request: DataRequest, db: Sess
     return submission
 
 
+# ---------------------------------------------------------------------------
+# Auto-release helpers (shared by /download lazy check, /claim, and the sweep)
+# All three MUST go through these so the release rules can never drift.
+# ---------------------------------------------------------------------------
+
+ACCEPTED_STATUSES = (SubmissionStatus.ACCEPTED, SubmissionStatus.PARTIALLY_ACCEPTED)
+
+
+def _window_elapsed(submission: Submission) -> bool:
+    """True if the acceptance window has passed since accepted_at."""
+    return bool(
+        submission.accepted_at
+        and datetime.utcnow() > submission.accepted_at + timedelta(hours=ACCEPTANCE_WINDOW_HOURS)
+    )
+
+
+def _has_open_dispute(submission_id, db: Session) -> bool:
+    from app.models import Dispute
+    return (
+        db.query(Dispute)
+        .filter(Dispute.submission_id == str(submission_id), Dispute.status == "open")
+        .first()
+        is not None
+    )
+
+
+def _auto_release_if_due(submission: Submission, data_request: DataRequest, db: Session) -> bool:
+    """
+    Release escrow iff the submission is ACCEPTED/PARTIALLY_ACCEPTED, the acceptance
+    window has elapsed, and no dispute is open. Returns True if it released.
+
+    This is the single source of truth for "is this submission eligible for
+    buyer-independent auto-release". The lazy /download check, the provider /claim
+    endpoint, and the background sweep all call it, so the rules can't diverge.
+    """
+    if submission.status not in ACCEPTED_STATUSES:
+        return False
+    if not _window_elapsed(submission):
+        return False
+    if _has_open_dispute(submission.id, db):
+        return False
+    _release_and_pay(submission, data_request, db)
+    return True
+
+
+def run_auto_release_sweep(db: Session) -> int:
+    """
+    Release every ACCEPTED/PARTIALLY_ACCEPTED submission whose acceptance window has
+    elapsed and that has no open dispute — regardless of whether the buyer ever
+    returned. This is what guarantees providers are never stranded.
+
+    Returns the number of submissions released. Idempotent: release_to_provider is
+    keyed by submission id and the ledger ref is unique, so re-running is safe.
+    """
+    cutoff = datetime.utcnow() - timedelta(hours=ACCEPTANCE_WINDOW_HOURS)
+    due = (
+        db.query(Submission)
+        .filter(
+            Submission.status.in_(ACCEPTED_STATUSES),
+            Submission.accepted_at.isnot(None),
+            Submission.accepted_at < cutoff,
+            Submission.is_deleted == False,
+        )
+        .all()
+    )
+    released = 0
+    for sub in due:
+        data_request = db.query(DataRequest).filter(DataRequest.id == str(sub.request_id)).first()
+        if data_request and _auto_release_if_due(sub, data_request, db):
+            released += 1
+    return released
+
+
 @router.post("/{submission_id}/confirm")
 def confirm(
     submission_id: str,
@@ -266,9 +339,12 @@ def confirm(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Buyer confirms the dataset is satisfactory → releases escrow to provider.
-    Also fires automatically (lazy) if ACCEPTANCE_WINDOW_HOURS has elapsed since
-    accepted_at and no dispute is open — so providers are never stranded.
+    Buyer explicitly confirms the dataset is satisfactory → releases escrow now,
+    before the acceptance window elapses. This is the buyer-driven path.
+
+    Providers who are never confirmed are NOT stranded: the background sweep
+    (run_auto_release_sweep) and the provider-reachable POST /{id}/claim endpoint
+    both release ACCEPTED submissions once the window passes with no open dispute.
     """
     submission = _get_submission_or_404(submission_id, db)
 
@@ -277,27 +353,63 @@ def confirm(
         raise HTTPException(status_code=404, detail="Request not found")
     _require_request_owner(data_request, current_user)
 
-    accepted_statuses = (SubmissionStatus.ACCEPTED, SubmissionStatus.PARTIALLY_ACCEPTED)
-    if submission.status not in accepted_statuses:
-        # Auto-release path: if window has elapsed and no dispute, release silently
+    if submission.status not in ACCEPTED_STATUSES:
         if submission.status == SubmissionStatus.PAID:
-            return {"submission": _serialize_submission(submission), "auto_released": False}
+            return {"submission": _serialize_submission(submission), "released": False}
         raise HTTPException(
             status_code=409,
             detail=f"Only ACCEPTED/PARTIALLY_ACCEPTED submissions can be confirmed (current: {submission.status})",
         )
 
-    # Check if a dispute is open — if so, block release
-    from app.models import Dispute
-    dispute = db.query(Dispute).filter(
-        Dispute.submission_id == str(submission.id),
-        Dispute.status == "open",
-    ).first()
-    if dispute:
+    # A dispute pauses release until an admin resolves it
+    if _has_open_dispute(submission.id, db):
         raise HTTPException(status_code=409, detail="A dispute is open — release is paused until admin resolves it")
 
     submission = _release_and_pay(submission, data_request, db)
-    return {"submission": _serialize_submission(submission), "auto_released": False}
+    return {"submission": _serialize_submission(submission), "released": True}
+
+
+# ---------------------------------------------------------------------------
+# Provider: claim payment after the acceptance window (buyer-independent)
+# ---------------------------------------------------------------------------
+
+@router.post("/{submission_id}/claim")
+def claim(
+    submission_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Provider self-service release. Once the acceptance window has elapsed and no
+    dispute is open, the provider can release their own escrow without the buyer
+    ever calling /confirm or /download. Complements the background sweep so a
+    provider is never stranded by an absent buyer.
+    """
+    submission = _get_submission_or_404(submission_id, db)
+    if str(submission.provider_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Not your submission")
+
+    data_request = db.query(DataRequest).filter(DataRequest.id == str(submission.request_id)).first()
+    if not data_request:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    if submission.status == SubmissionStatus.PAID:
+        return {"submission": _serialize_submission(submission), "released": False, "detail": "Already paid"}
+    if submission.status not in ACCEPTED_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Submission is not awaiting release (status: {submission.status})",
+        )
+    if not _window_elapsed(submission):
+        raise HTTPException(
+            status_code=409,
+            detail="Acceptance window has not elapsed yet — the buyer may still confirm or open a dispute",
+        )
+    if _has_open_dispute(submission.id, db):
+        raise HTTPException(status_code=409, detail="A dispute is open — release is paused until admin resolves it")
+
+    submission = _release_and_pay(submission, data_request, db)
+    return {"submission": _serialize_submission(submission), "released": True}
 
 
 # ---------------------------------------------------------------------------
@@ -444,17 +556,9 @@ def download(
         raise HTTPException(status_code=404, detail="Request not found")
     _require_request_owner(data_request, current_user)
 
-    # Auto-release check: if window has elapsed and no dispute, release now (lazy sweep)
-    accepted_statuses = (SubmissionStatus.ACCEPTED, SubmissionStatus.PARTIALLY_ACCEPTED)
-    if submission.status in accepted_statuses and submission.accepted_at:
-        window_expired = datetime.utcnow() > submission.accepted_at + timedelta(hours=ACCEPTANCE_WINDOW_HOURS)
-        if window_expired:
-            from app.models import Dispute
-            open_dispute = db.query(Dispute).filter(
-                Dispute.submission_id == str(submission.id), Dispute.status == "open"
-            ).first()
-            if not open_dispute:
-                submission = _release_and_pay(submission, data_request, db)
+    # Auto-release check: if window has elapsed and no dispute, release now (lazy).
+    # Shares one helper with /claim and the sweep so the rules can't drift.
+    _auto_release_if_due(submission, data_request, db)
 
     # Status gate — full file for PAID or during the acceptance window (buyer verifying)
     allowed_statuses = (SubmissionStatus.PAID, SubmissionStatus.ACCEPTED, SubmissionStatus.PARTIALLY_ACCEPTED)

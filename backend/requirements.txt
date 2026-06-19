@@ -13,3 +13,4 @@ python-jose[cryptography]
 email-validator
 python-multipart
 pytest
+apscheduler
