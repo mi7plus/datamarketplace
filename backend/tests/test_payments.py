@@ -117,10 +117,13 @@ class TestLedgerInvariant:
         if refund > 0:
             provider.refund_to_buyer(req, refund, db)
 
+        from decimal import Decimal
         bal = ledger_balance(db, req_id)
-        assert abs(bal["held"] - budget) < 0.01, "held should equal budget"
+        # ledger_balance now returns Decimal — coerce budget for comparison
+        d_budget = Decimal(str(budget)).quantize(Decimal("0.01"))
+        assert bal["held"] == d_budget, f"held {bal['held']} != budget {d_budget}"
         total_out = bal["released"] + bal["refunded"] + bal["remaining"]
-        assert abs(total_out - bal["held"]) < 0.01, (
+        assert total_out == bal["held"], (
             f"invariant broken: {bal['held']} held != "
             f"{bal['released']} released + {bal['refunded']} refunded + {bal['remaining']} remaining"
         )

@@ -9,6 +9,7 @@
 import os
 import uuid
 from abc import ABC, abstractmethod
+from decimal import Decimal, ROUND_HALF_UP
 
 import stripe
 from sqlalchemy.orm import Session
@@ -20,11 +21,16 @@ from app.models import DataRequest, Submission, Ledger, UserAuth
 # Ledger helper — all money ops write here (append-only)
 # ---------------------------------------------------------------------------
 
+def _to_decimal(v) -> Decimal:
+    """Coerce float/int/str/Decimal to Decimal(12,2)."""
+    return Decimal(str(v or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 def append_ledger(
     db: Session,
     request_id,
     entry_type: str,     # "hold" | "release" | "refund"
-    amount: float,
+    amount,
     external_ref: str,
     submission_id=None,
 ) -> Ledger:
@@ -32,7 +38,7 @@ def append_ledger(
         request_id=request_id,
         submission_id=submission_id,
         entry_type=entry_type,
-        amount=round(amount, 2),
+        amount=_to_decimal(amount),
         external_ref=external_ref,
     )
     db.add(entry)
@@ -41,16 +47,17 @@ def append_ledger(
 
 
 def ledger_balance(db: Session, request_id) -> dict:
-    """Return {held, released, refunded, remaining} for a request."""
+    """Return {held, released, refunded, remaining} as exact Decimal values."""
     entries = db.query(Ledger).filter(Ledger.request_id == str(request_id)).all()
-    held = sum(e.amount for e in entries if e.entry_type == "hold")
-    released = sum(e.amount for e in entries if e.entry_type == "release")
-    refunded = sum(e.amount for e in entries if e.entry_type == "refund")
+    held     = sum((_to_decimal(e.amount) for e in entries if e.entry_type == "hold"),     Decimal("0"))
+    released = sum((_to_decimal(e.amount) for e in entries if e.entry_type == "release"), Decimal("0"))
+    refunded = sum((_to_decimal(e.amount) for e in entries if e.entry_type == "refund"),  Decimal("0"))
+    remaining = held - released - refunded
     return {
-        "held": round(held, 2),
-        "released": round(released, 2),
-        "refunded": round(refunded, 2),
-        "remaining": round(held - released - refunded, 2),
+        "held":      held,
+        "released":  released,
+        "refunded":  refunded,
+        "remaining": remaining,
     }
 
 

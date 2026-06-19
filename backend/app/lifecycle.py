@@ -7,6 +7,8 @@
 # Phase 4 will wrap the allocation + acceptance transitions in a DB transaction
 # with an optimistic lock on DataRequest.version.
 
+from decimal import Decimal, ROUND_HALF_UP
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
@@ -153,9 +155,10 @@ def accept_submission(
 
     accepted = min(eligible, remaining)
 
-    price_per_unit = request.price_per_unit or (
+    ppu_raw = request.price_per_unit or (
         (request.budget / request.amount_required) if request.amount_required else 0
     )
+    price_per_unit = Decimal(str(ppu_raw or 0)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
     if accepted == 0:
         new_status = SubmissionStatus.REJECTED
@@ -165,7 +168,7 @@ def accept_submission(
         new_status = SubmissionStatus.ACCEPTED
 
     submission.accepted_amount = accepted
-    submission.amount_due = round(accepted * price_per_unit, 2)
+    submission.amount_due = (Decimal(accepted) * price_per_unit).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     request.accepted_total = (request.accepted_total or 0) + accepted
 
     # Enforce invariant in code before committing

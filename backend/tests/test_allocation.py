@@ -108,7 +108,9 @@ class TestPlanAcceptanceCriteria:
         s = make_submission(offered_amount=3, validated_amount=3)
         db = fake_db()
         sub, _ = lifecycle.accept_submission(s, r, db)
-        assert sub.amount_due == pytest.approx(9.999, abs=0.01)
+        from decimal import Decimal
+        # amount_due is now Decimal; 3 × 3.333 rounded to 2dp = 10.00
+        assert sub.amount_due == Decimal("10.00")
 
     def test_reject_endpoint_logic(self):
         """VALIDATED → REJECTED via explicit buyer rejection (no allocation)."""

@@ -251,8 +251,9 @@ def _release_and_pay(submission: Submission, data_request: DataRequest, db: Sess
     _increment_transactions(str(data_request.requester_id), successful=True, db=db)
     _increment_transactions(str(submission.provider_id), successful=True, db=db)
     if data_request.status == RequestStatus.COMPLETED:
+        from decimal import Decimal
         balance = ledger_balance(db, data_request.id)
-        if balance["remaining"] > 0:
+        if balance["remaining"] > Decimal("0"):
             payment.refund_to_buyer(data_request, balance["remaining"], db)
     db.commit()
     return submission
@@ -345,8 +346,9 @@ def expire(
     _require_request_owner(data_request, current_user)
     data_request = expire_request(data_request, db)
     # Refund unspent escrow
+    from decimal import Decimal
     balance = ledger_balance(db, data_request.id)
-    if balance["remaining"] > 0.01:
+    if balance["remaining"] > Decimal("0"):
         get_payment_provider().refund_to_buyer(data_request, balance["remaining"], db)
     db.commit()
     return {"status": data_request.status}

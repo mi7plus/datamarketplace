@@ -1,7 +1,7 @@
 # app/models.py
 from sqlalchemy import (
     Column, Integer, String, ForeignKey, Text, Float,
-    Boolean, DateTime, Index, JSON
+    Boolean, DateTime, Index, JSON, Numeric
 )
 import uuid
 from sqlalchemy.dialects.postgresql import UUID
@@ -88,13 +88,13 @@ class DataRequest(BaseModel):
     description = Column(Text)
     required_format = Column(String)           # kept for compatibility; spec JSON supersedes in Phase 2
     amount_required = Column(Integer)          # target quantity
-    budget = Column(Float)                     # total buyer budget (escrowed on OPEN)
+    budget = Column(Numeric(12, 2))            # total buyer budget (escrowed on OPEN)
     pricing_mode = Column(
         Enum(PricingMode, name="pricing_mode_enum"),
         default=PricingMode.PER_UNIT,
         nullable=False,
     )
-    price_per_unit = Column(Float)             # stored for stability (= budget / amount_required)
+    price_per_unit = Column(Numeric(12, 2))   # stored for stability (= budget / amount_required)
     unit = Column(String)                      # e.g. "row", "record", "image"
     deadline = Column(DateTime, nullable=True)
     spec = Column(JSON, nullable=True)         # structured schema (Phase 2)
@@ -124,7 +124,7 @@ class Submission(BaseModel):
     offered_amount = Column(Integer, default=0)     # declared by provider at submit
     accepted_amount = Column(Integer, default=0)    # set by buyer at acceptance (Phase 4)
     validated_amount = Column(Integer, nullable=True)  # units passing ingest validation (Phase 3)
-    amount_due = Column(Float, nullable=True)       # accepted_amount × price_per_unit (set at acceptance)
+    amount_due = Column(Numeric(12, 2), nullable=True)  # accepted_amount × price_per_unit (set at acceptance)
     validation_report = Column(JSON, nullable=True)
     request = relationship("DataRequest", back_populates="submissions")
     provider = relationship("UserAuth", back_populates="submissions")
@@ -231,7 +231,7 @@ class Ledger(BaseModel):
     request_id = Column(UUID(as_uuid=True), ForeignKey("data_requests.id"), nullable=False)
     submission_id = Column(UUID(as_uuid=True), ForeignKey("submissions.id"), nullable=True)
     entry_type = Column(String, nullable=False)   # "hold" | "release" | "refund"
-    amount = Column(Float, nullable=False)
+    amount = Column(Numeric(12, 2), nullable=False)
     external_ref = Column(String, nullable=True)  # Stripe payment intent / transfer id
     request = relationship("DataRequest")
     submission = relationship("Submission")
