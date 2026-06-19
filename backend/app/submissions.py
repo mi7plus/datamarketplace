@@ -129,6 +129,7 @@ async def create_submission(
         storage_location=storage_location,
         dataset_hash=result.dataset_hash,
         owner_signature=warranty_sig,
+        key_hashes=result.key_hashes or None,
     )
     db.add(submission)
     db.flush()

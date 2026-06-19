@@ -36,6 +36,7 @@ class ValidationResult:
     dataset_hash: str
     validation_report: dict
     sample: list[dict]
+    key_hashes: list[str] = field(default_factory=list)  # per-record SHA-256 for dedup (populated when spec has unique_key)
 
 
 def _parse_value(raw: str, col_type: str) -> tuple[bool, Any]:
@@ -144,6 +145,14 @@ def validate_dataset(
     validated_amount = len(conforming)
     sample = conforming[:SAMPLE_ROWS]
 
+    # Build per-record key hashes for cross-provider dedup (F3).
+    # Each hash is SHA-256 of the canonical key-tuple string for that record.
+    key_hashes: list[str] = []
+    if unique_key:
+        for parsed_row in conforming:
+            key_val = tuple(str(parsed_row.get(k, "")) for k in unique_key)
+            key_hashes.append(hashlib.sha256(repr(key_val).encode()).hexdigest())
+
     report = {
         "total_rows": total_rows,
         "conforming_rows": validated_amount,
@@ -161,6 +170,7 @@ def validate_dataset(
         dataset_hash=dataset_hash,
         validation_report=report,
         sample=sample,
+        key_hashes=key_hashes,
     )
 
 

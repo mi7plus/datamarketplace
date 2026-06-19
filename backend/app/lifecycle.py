@@ -10,7 +10,7 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models import DataRequest, Submission, RequestStatus, SubmissionStatus
+from app.models import DataRequest, Submission, RequestStatus, SubmissionStatus, AcceptedKey
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +136,21 @@ def accept_submission(
 
     remaining = (request.amount_required or 0) - (request.accepted_total or 0)
     eligible = submission.validated_amount
+
+    # Cross-provider dedup (F3): subtract records whose key-hash was already accepted
+    # for this request. Only active when the spec declares a unique_key AND this
+    # submission has key_hashes stored (i.e. the spec had a unique_key at ingest time).
+    overlap = 0
+    if getattr(submission, "key_hashes", None):
+        already_accepted = {
+            row.key_hash
+            for row in db.query(AcceptedKey)
+            .filter(AcceptedKey.request_id == str(request.id))
+            .all()
+        }
+        overlap = sum(1 for h in submission.key_hashes if h in already_accepted)
+        eligible = max(0, eligible - overlap)
+
     accepted = min(eligible, remaining)
 
     price_per_unit = request.price_per_unit or (
@@ -162,6 +177,14 @@ def accept_submission(
 
     submission = transition_submission(submission, new_status, db)
     request = _recalculate_request_status(request, db)
+
+    # Persist newly-accepted key-hashes so future submissions see them as duplicates.
+    # Uses the first `accepted` hashes (preserving insertion order from ingest).
+    if accepted > 0 and getattr(submission, "key_hashes", None):
+        for kh in submission.key_hashes[:accepted]:
+            db.add(AcceptedKey(request_id=request.id, key_hash=kh))
+        db.flush()
+
     return submission, request
 
 

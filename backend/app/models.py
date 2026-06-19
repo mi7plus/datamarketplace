@@ -146,6 +146,7 @@ class Submission(BaseModel):
     owner_signature = Column(String)      # provider warranty affirmation (Phase 8)
     access_expiry = Column(DateTime)
     accepted_at = Column(DateTime, nullable=True)  # set when ACCEPTED; starts the review window
+    key_hashes = Column(JSON, nullable=True)        # per-record SHA-256 hashes for cross-provider dedup (F3)
     __table_args__ = (
         Index("idx_submission_request_status", "request_id", "status"),
         Index("idx_submission_active_records", "is_deleted", "status"),
@@ -205,6 +206,23 @@ class Dispute(BaseModel):
     submission = relationship("Submission")
     opened_by = relationship("UserAuth")
     __table_args__ = (Index("idx_dispute_submission", "submission_id"),)
+
+
+class AcceptedKey(Base):
+    """
+    Tracks per-record unique-key hashes that have already been accepted for a request.
+    Prevents cross-provider duplicate records from being paid twice.
+    Only populated when the request spec declares a unique_key.
+    """
+    __tablename__ = "accepted_keys"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    request_id = Column(UUID(as_uuid=True), ForeignKey("data_requests.id"), nullable=False)
+    key_hash = Column(String(64), nullable=False)  # SHA-256 hex of the key tuple
+    __table_args__ = (
+        Index("idx_accepted_keys_request", "request_id"),
+        # Unique constraint makes insert-or-ignore the atomic dedup primitive
+        __import__("sqlalchemy").UniqueConstraint("request_id", "key_hash", name="uq_accepted_key"),
+    )
 
 
 class Ledger(BaseModel):
