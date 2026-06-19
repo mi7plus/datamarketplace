@@ -171,7 +171,7 @@ Active roadmap: `datamarketplace-implementation-plan.md`. Work phase by phase. S
 |---|---|---|
 | Phase 0 — Hygiene & bug fixes | ✅ Done | Secrets gitignored, bugs fixed, `routes.py` deleted |
 | Phase 1 — Alembic + model + lifecycles | ✅ Done | Alembic wired; models extended; state machines in `lifecycle.py`; 18 tests passing |
-| Phase 2 — Structured request spec & creation flow | ⏳ Pending | |
+| Phase 2 — Structured request spec & creation flow | ✅ Done | Spec schema, column editor, live progress bar, real API in composable |
 | Phase 3 — Submission + ingest validation | ⏳ Pending | |
 | Phase 4 — Fulfilment engine | ⏳ Pending | Core MVP value |
 | Phase 5 — Escrow & payments (Stripe) | ⏳ Pending | |
