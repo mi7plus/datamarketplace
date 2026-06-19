@@ -1,1 +1,0 @@
-import{W as e,X as t,v as n}from"./vendor/json-editor-vue-ddj4xtqm.js";import{N as r}from"#entry";var i={},a={"h-full":``,"of-auto":``};function o(r,i){return e(),n(`div`,a,[t(r.$slots,`default`)])}var s=r(i,[[`render`,o]]);export{s as default};
