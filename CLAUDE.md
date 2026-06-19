@@ -49,17 +49,35 @@ cd frontend
 npm install
 ```
 
-### Creating / migrating DB tables
-
-There are no migration files — tables are created directly from SQLAlchemy models:
+### Running DB migrations (Alembic)
 
 ```powershell
-& ".\backend\venv\Scripts\python.exe" -c "
-import sys; sys.path.insert(0, 'backend')
-from app.db import engine, Base
-from app import models
-Base.metadata.create_all(bind=engine)
-"
+# Apply all pending migrations
+cd backend
+.\venv\Scripts\python.exe -m alembic upgrade head
+
+# Check if models and DB are in sync
+.\venv\Scripts\python.exe -m alembic check
+
+# Create a new migration after a model change
+.\venv\Scripts\python.exe -m alembic revision --autogenerate -m "describe_change"
+```
+
+> **Important:** Always use Alembic for schema changes. Never use `Base.metadata.create_all` except on a fresh empty DB.
+> For enum changes (adding values), hand-write `ALTER TYPE ... ADD VALUE IF NOT EXISTS` in the migration — autogenerate won't produce these.
+
+### Seeding reference data
+
+```powershell
+cd backend
+.\venv\Scripts\python.exe -m app.seed
+```
+
+### Running tests
+
+```powershell
+cd backend
+.\venv\Scripts\python.exe -m pytest tests/ -v
 ```
 
 ---
@@ -78,6 +96,8 @@ Base.metadata.create_all(bind=engine)
 | `profile.py` | `/profile` — upsert and fetch `UserProfile` |
 | `requests.py` | `/requests` — create and list `DataRequest` |
 | `submissions.py` | `/submissions` — create `Submission` |
+| `lifecycle.py` | State machine functions for `DataRequest` and `Submission` — all status changes go through here |
+| `seed.py` | Seeds `licenses` table with standard license options — run once |
 
 **Key design decisions:**
 - All models inherit `BaseModel` which provides a UUID primary key, `created_at`, `updated_at`, `is_deleted`, and `version`.
@@ -150,7 +170,7 @@ Active roadmap: `datamarketplace-implementation-plan.md`. Work phase by phase. S
 | Phase | Status | Notes |
 |---|---|---|
 | Phase 0 — Hygiene & bug fixes | ✅ Done | Secrets gitignored, bugs fixed, `routes.py` deleted |
-| Phase 1 — Alembic + model + lifecycles | 🔜 Next | Set up Alembic before any further schema changes |
+| Phase 1 — Alembic + model + lifecycles | ✅ Done | Alembic wired; models extended; state machines in `lifecycle.py`; 18 tests passing |
 | Phase 2 — Structured request spec & creation flow | ⏳ Pending | |
 | Phase 3 — Submission + ingest validation | ⏳ Pending | |
 | Phase 4 — Fulfilment engine | ⏳ Pending | Core MVP value |
