@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from jose import jwt, JWTError
 import os
 import uuid
+import hashlib
 
 from app.schemas import RegisterSchema, LoginSchema, TokenSchema
 from app.models import UserAuth as User
@@ -44,6 +45,12 @@ def create_refresh_token(user_id: str):
     }
 
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def _hash_refresh_token(token: str) -> str:
+    """SHA-256 of the refresh token, stored server-side so logout can invalidate it.
+    (SHA-256, not bcrypt: the JWT exceeds bcrypt's 72-byte input limit.)"""
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 # -----------------------------
@@ -88,6 +95,11 @@ def login(
     access_token = create_access_token(user.id)
     refresh_token = create_refresh_token(user.id)
 
+    # Store the refresh token's hash so /auth/refresh can validate it and
+    # /auth/logout can invalidate it. One active refresh token per user.
+    user.refresh_token_hash = _hash_refresh_token(refresh_token)
+    db.commit()
+
     if response is not None:
         response.set_cookie(
             key="refresh_token",
@@ -126,6 +138,11 @@ def refresh_token(
         if not user:
             raise HTTPException(status_code=401)
 
+        # The presented refresh token must match the one stored at login. After
+        # logout (hash cleared) or a newer login (hash rotated), this fails → 401.
+        if not user.refresh_token_hash or user.refresh_token_hash != _hash_refresh_token(refresh_token):
+            raise HTTPException(status_code=401, detail="Refresh token is no longer valid")
+
         new_access_token = create_access_token(user.id)
 
         return {
@@ -157,3 +174,21 @@ def get_current_user(
 
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+# -----------------------------
+# LOGOUT
+# -----------------------------
+
+@router.post("/logout")
+def logout(
+    response: Response,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Invalidate the server-side refresh token and delete the cookie. After this,
+    /auth/refresh returns 401 — the httpOnly cookie can no longer mint tokens."""
+    current_user.refresh_token_hash = None
+    db.commit()
+    response.delete_cookie("refresh_token")
+    return {"msg": "Logged out"}

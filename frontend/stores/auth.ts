@@ -66,8 +66,19 @@ export const useAuthStore = defineStore('auth', {
             }
         },
 
-        // FE5 enhances this to invalidate the server-side refresh token.
         async logout() {
+            const base = useRuntimeConfig().public.apiBase
+            // Invalidate the server-side refresh token + clear the cookie.
+            // Best-effort: clear local state and redirect regardless of the result.
+            try {
+                await $fetch(base + '/auth/logout', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: this.token ? { Authorization: `Bearer ${this.token}` } : {},
+                })
+            } catch {
+                // ignore — we still clear locally below
+            }
             this.clear()
             await navigateTo('/login')
         },
