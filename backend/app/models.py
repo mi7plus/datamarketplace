@@ -232,7 +232,16 @@ class Ledger(BaseModel):
     submission_id = Column(UUID(as_uuid=True), ForeignKey("submissions.id"), nullable=True)
     entry_type = Column(String, nullable=False)   # "hold" | "release" | "refund"
     amount = Column(Numeric(12, 2), nullable=False)
-    external_ref = Column(String, nullable=True)  # Stripe payment intent / transfer id
+    external_ref = Column(String, nullable=True, unique=True)  # Stripe payment intent / transfer id; unique prevents double-record
     request = relationship("DataRequest")
     submission = relationship("Submission")
     __table_args__ = (Index("idx_ledger_request_id", "request_id"),)
+
+
+class ProcessedStripeEvent(Base):
+    """Dedup table for Stripe webhook events. Prevents double-processing on redelivery."""
+    __tablename__ = "processed_stripe_events"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id = Column(String, nullable=False, unique=True)
+    event_type = Column(String, nullable=False)
+    processed_at = Column(DateTime, default=datetime.utcnow)

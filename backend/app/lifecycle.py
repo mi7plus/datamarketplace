@@ -34,6 +34,7 @@ def transition_request(
     request: DataRequest,
     new_status: RequestStatus,
     db: Session,
+    commit: bool = True,
 ) -> DataRequest:
     allowed = _REQUEST_TRANSITIONS.get(request.status, set())
     if new_status not in allowed:
@@ -42,8 +43,9 @@ def transition_request(
             detail=f"Cannot move request from {request.status} to {new_status}",
         )
     request.status = new_status
-    db.commit()
-    db.refresh(request)
+    if commit:
+        db.commit()
+        db.refresh(request)
     return request
 
 
@@ -57,14 +59,15 @@ def expire_request(request: DataRequest, db: Session) -> DataRequest:
     return transition_request(request, RequestStatus.EXPIRED, db)
 
 
-def _recalculate_request_status(request: DataRequest, db: Session) -> DataRequest:
+def _recalculate_request_status(request: DataRequest, db: Session, commit: bool = True) -> DataRequest:
     """Called after each acceptance to move OPEN → PARTIALLY_FULFILLED → COMPLETED."""
     if request.accepted_total >= request.amount_required:
-        return transition_request(request, RequestStatus.COMPLETED, db)
+        return transition_request(request, RequestStatus.COMPLETED, db, commit=commit)
     if request.status == RequestStatus.OPEN and request.accepted_total > 0:
-        return transition_request(request, RequestStatus.PARTIALLY_FULFILLED, db)
-    db.commit()
-    db.refresh(request)
+        return transition_request(request, RequestStatus.PARTIALLY_FULFILLED, db, commit=commit)
+    if commit:
+        db.commit()
+        db.refresh(request)
     return request
 
 
@@ -88,6 +91,7 @@ def transition_submission(
     submission: Submission,
     new_status: SubmissionStatus,
     db: Session,
+    commit: bool = True,
 ) -> Submission:
     allowed = _SUBMISSION_TRANSITIONS.get(submission.status, set())
     if new_status not in allowed:
@@ -96,8 +100,9 @@ def transition_submission(
             detail=f"Cannot move submission from {submission.status} to {new_status}",
         )
     submission.status = new_status
-    db.commit()
-    db.refresh(submission)
+    if commit:
+        db.commit()
+        db.refresh(submission)
     return submission
 
 
@@ -178,15 +183,21 @@ def accept_submission(
             detail="accepted_amount cannot exceed validated_amount",
         )
 
-    submission = transition_submission(submission, new_status, db)
-    request = _recalculate_request_status(request, db)
+    # All three mutations (submission status, request status, accepted_keys) are
+    # flushed but NOT committed here. The caller holds the FOR UPDATE lock and
+    # issues the single db.commit() that ends the critical section atomically.
+    submission = transition_submission(submission, new_status, db, commit=False)
+    request = _recalculate_request_status(request, db, commit=False)
 
     # Persist newly-accepted key-hashes so future submissions see them as duplicates.
-    # Uses the first `accepted` hashes (preserving insertion order from ingest).
     if accepted > 0 and getattr(submission, "key_hashes", None):
         for kh in submission.key_hashes[:accepted]:
             db.add(AcceptedKey(request_id=request.id, key_hash=kh))
-        db.flush()
+
+    db.flush()
+    db.commit()
+    db.refresh(submission)
+    db.refresh(request)
 
     return submission, request
 

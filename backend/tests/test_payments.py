@@ -46,11 +46,31 @@ def fake_db_with_ledger():
         pass
     db.flush = flush
 
-    # Support ledger_balance query: db.query(Ledger).filter(...).all()
+    # Support ledger_balance query and dedup lookup: db.query(Ledger).filter(...).all()/.first()
+    _last_filter_ref: list = [None]
+
     class FakeQuery:
-        def filter(self, *args): return self
+        def filter(self, *args):
+            # Try to extract the external_ref value from the filter expression
+            for arg in args:
+                try:
+                    # SQLAlchemy BinaryExpression: right side is the ref value
+                    val = arg.right.value if hasattr(arg, "right") else None
+                    if val is not None:
+                        _last_filter_ref[0] = val
+                except Exception:
+                    pass
+            return self
         def order_by(self, *args): return self
         def all(self): return entries
+        def first(self):
+            ref = _last_filter_ref[0]
+            if ref is None:
+                return None
+            for e in entries:
+                if getattr(e, "external_ref", None) == ref:
+                    return e
+            return None
 
     db.query = lambda model: FakeQuery() if model is Ledger else MagicMock()
     db._entries = entries

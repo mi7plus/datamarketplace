@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.models import ProcessedStripeEvent
 
 router = APIRouter()
 
@@ -37,13 +38,27 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="Malformed payload")
 
     event_type = event.get("type", "")
+    event_id = event.get("id", "")
 
-    # Phase 5 reconciliation stubs — extend as Stripe integration deepens
+    # Dedup: Stripe redelivers on non-2xx responses. Skip if already processed.
+    if event_id:
+        already = db.query(ProcessedStripeEvent).filter(
+            ProcessedStripeEvent.event_id == event_id
+        ).first()
+        if already:
+            return {"received": True, "type": event_type, "duplicate": True}
+
+    # Reconciliation stubs — extend as Stripe integration deepens
     if event_type == "payment_intent.succeeded":
         pass  # Escrow confirmed — no action needed (we record on API call, not webhook)
     elif event_type == "transfer.paid":
         pass  # Release confirmed
     elif event_type == "charge.refunded":
         pass  # Refund confirmed
+
+    # Persist processed event so redeliveries are no-ops
+    if event_id:
+        db.add(ProcessedStripeEvent(event_id=event_id, event_type=event_type))
+        db.commit()
 
     return {"received": True, "type": event_type}

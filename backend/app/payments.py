@@ -34,6 +34,12 @@ def append_ledger(
     external_ref: str,
     submission_id=None,
 ) -> Ledger:
+    # Idempotency: if this external_ref was already recorded, return existing row.
+    # Prevents double-recording on webhook redelivery or retry after partial failure.
+    if external_ref:
+        existing = db.query(Ledger).filter(Ledger.external_ref == external_ref).first()
+        if existing:
+            return existing
     entry = Ledger(
         request_id=request_id,
         submission_id=submission_id,
