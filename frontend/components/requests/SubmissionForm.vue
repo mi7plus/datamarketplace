@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useAuthStore } from '~/stores/auth'
-import { useRuntimeConfig } from '#app'
+import { useApi } from '~/composables/useApi'
 
 const props = defineProps<{ requestId: string; requestSpec?: any; unit?: string }>()
 const emit = defineEmits<{ submitted: [result: any] }>()
 
-const auth = useAuthStore()
-const config = useRuntimeConfig()
+const api = useApi()
 
 const file = ref<File | null>(null)
 const offeredAmount = ref(100)
@@ -49,14 +47,9 @@ async function submit() {
         fd.append('warranted', 'true')   // backend stores timestamp in owner_signature
         fd.append('file', file.value)
 
-        const res = await fetch(`${config.public.apiBase}/submissions/`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${auth.token}` },
-            body: fd,
-        })
-
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.detail || `Error ${res.status}`)
+        // Goes through useApi so it inherits auth + 401-refresh-retry; postForm
+        // sets no Content-Type so the browser supplies the multipart boundary.
+        const data = await api.postForm('/submissions/', fd)
 
         result.value = data
         emit('submitted', data)

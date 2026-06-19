@@ -50,5 +50,10 @@ export const useApi = () => {
             body: JSON.stringify(data),
         })
 
-    return { get, post }
+    // Multipart upload — reuses the same auth + 401-refresh-retry core.
+    // Deliberately set NO Content-Type: the browser sets the multipart boundary.
+    const postForm = (url: string, form: FormData) =>
+        request(url, { method: 'POST', body: form })
+
+    return { get, post, postForm }
 }
