@@ -1,5 +1,6 @@
 # app/profile.py
 import os
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.models import UserProfile, UserAuth as User, UserRole
@@ -7,6 +8,9 @@ from app.schemas import ProfileCreate
 from app.db import get_db
 from app.auth import get_current_user
 from app.payments import get_payment_provider
+from app.notifications import notify
+
+PAYOUT_COOLDOWN_HOURS = int(os.getenv("PAYOUT_COOLDOWN_HOURS", "24"))
 
 router = APIRouter()
 
@@ -86,10 +90,24 @@ def stripe_connect_link(
     payment = get_payment_provider()
     url, acct_id = payment.create_connect_link(current_user, return_url, refresh_url)
 
-    # Persist the account id if it was just created
-    if not current_user.stripe_account_id or current_user.stripe_account_id != acct_id:
+    if not current_user.stripe_account_id:
+        # First-time onboarding — establish the destination, no cool-down.
         current_user.stripe_account_id = acct_id
         db.commit()
+    elif current_user.stripe_account_id != acct_id:
+        # CHANGING the payout destination — the most lucrative ATO target.
+        # Stamp a cool-down so the new account can't immediately receive releases,
+        # and send an out-of-band notice so the real owner can react.
+        current_user.stripe_account_id = acct_id
+        current_user.payout_account_changed_at = datetime.utcnow()
+        db.commit()
+        notify(
+            current_user,
+            "Your payout account was changed",
+            "Your Rowbound payout destination was updated. If this wasn't you, contact "
+            f"support immediately. Releases are held for {PAYOUT_COOLDOWN_HOURS}h as a "
+            "security measure.",
+        )
 
     return {"url": url, "stripe_account_id": acct_id}
 

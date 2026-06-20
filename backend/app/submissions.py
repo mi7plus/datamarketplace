@@ -19,6 +19,8 @@ from app.payments import get_payment_provider, ledger_balance
 from app.reviews import _increment_transactions
 
 ACCEPTANCE_WINDOW_HOURS = int(os.getenv("ACCEPTANCE_WINDOW_HOURS", "72"))
+# Releases to a just-changed payout destination are held for this long (S3).
+PAYOUT_COOLDOWN_HOURS = int(os.getenv("PAYOUT_COOLDOWN_HOURS", "24"))
 
 logger = logging.getLogger("submissions")
 
@@ -302,6 +304,15 @@ def _release_and_pay(submission_id: str, db: Session) -> Submission:
         return submission
     if _has_open_dispute(submission.id, db):
         return submission                       # dispute opened in the meantime
+
+    # Payout cool-down (S3): if the provider changed their payout destination
+    # recently, do NOT release yet — defer (stays ACCEPTED) until the window
+    # passes, so a hijacked account can't immediately drain escrow. The sweep
+    # retries automatically after the cool-down.
+    provider = db.query(User).filter(User.id == str(submission.provider_id)).first()
+    if provider and provider.payout_account_changed_at:
+        if datetime.utcnow() < provider.payout_account_changed_at + timedelta(hours=PAYOUT_COOLDOWN_HOURS):
+            return submission
 
     payment = get_payment_provider()
     payment.release_to_provider(submission, db)
