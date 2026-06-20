@@ -6,6 +6,28 @@ on:
   pull_request:
 
 jobs:
+  secrets-guard:
+    name: Secrets — no tracked .env / obvious keys
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail on a tracked .env file
+        run: |
+          if git ls-files | grep -E '(^|/)\.env$'; then
+            echo "::error::A .env file is tracked. Remove it (git rm --cached) and use .env.example."
+            exit 1
+          fi
+          echo "OK — no tracked .env files."
+      - name: Fail on obvious committed secrets
+        run: |
+          # Stripe live/restricted keys, AWS access keys, PEM private keys.
+          if git grep -nE '(sk_live_|rk_live_|AKIA[0-9A-Z]{16}|-----BEGIN (RSA |EC )?PRIVATE KEY-----)' \
+               -- ':!*.example' ':!*lock*' ':!.github/workflows/*'; then
+            echo "::error::Possible committed secret detected (see matches above)."
+            exit 1
+          fi
+          echo "OK — no obvious secrets detected."
+
   backend:
     name: Backend — Alembic + pytest
     runs-on: ubuntu-latest
