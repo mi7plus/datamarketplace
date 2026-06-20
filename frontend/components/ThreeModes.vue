@@ -23,11 +23,11 @@ const modes = [
   {
     key: 'collect',
     title: 'Collect',
-    tag: 'Coming soon',
-    live: false,
+    tag: 'Live',
+    live: true,
     blurb: 'Commission fresh data gathered in the field by a provider’s own workforce — validated and settled per record.',
-    to: null,
-    cta: 'Coming soon',
+    to: '/collect',
+    cta: 'Find collection work',
   },
 ]
 </script>

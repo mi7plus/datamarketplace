@@ -29,6 +29,9 @@ const linkClass = (path) =>
         <NuxtLink to="/catalog" :class="linkClass('/catalog')">
           Catalog
         </NuxtLink>
+        <NuxtLink to="/collect" :class="linkClass('/collect')">
+          Collect
+        </NuxtLink>
         <NuxtLink v-if="auth.isAuthenticated" to="/requests" :class="linkClass('/requests')">
           Browse Requests
         </NuxtLink>
