@@ -14,11 +14,11 @@ const modes = [
   {
     key: 'buy',
     title: 'Buy existing',
-    tag: 'Coming soon',
-    live: false,
+    tag: 'Live',
+    live: true,
     blurb: 'Browse pre-listed datasets and purchase any portion, priced per record — settled through the same escrow.',
-    to: null,
-    cta: 'Coming soon',
+    to: '/catalog',
+    cta: 'Browse catalog',
   },
   {
     key: 'collect',

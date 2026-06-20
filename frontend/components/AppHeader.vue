@@ -26,6 +26,9 @@ const linkClass = (path) =>
         <NuxtLink to="/" :class="route.path === '/' ? 'text-ink font-semibold' : 'text-muted hover:text-ink transition-colors'">
           Get data
         </NuxtLink>
+        <NuxtLink to="/catalog" :class="linkClass('/catalog')">
+          Catalog
+        </NuxtLink>
         <NuxtLink v-if="auth.isAuthenticated" to="/requests" :class="linkClass('/requests')">
           Browse Requests
         </NuxtLink>
@@ -34,8 +37,11 @@ const linkClass = (path) =>
           Post Request
         </NuxtLink>
 
-        <NuxtLink v-if="auth.isAuthenticated" to="/submissions" :class="linkClass('/submissions')" class="text-gray-600 hover:text-black">
+        <NuxtLink v-if="auth.isAuthenticated" to="/submissions" :class="linkClass('/submissions')">
           My Submissions
+        </NuxtLink>
+        <NuxtLink v-if="auth.isAuthenticated" to="/purchases" :class="linkClass('/purchases')">
+          My Purchases
         </NuxtLink>
         <NuxtLink v-if="auth.isAuthenticated" to="/profile" :class="linkClass('/profile')" class="text-gray-600 hover:text-black">
           My Profile
