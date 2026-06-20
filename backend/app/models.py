@@ -274,6 +274,37 @@ class Listing(BaseModel):
     )
 
 
+class CollectionDispatch(BaseModel):
+    """A BYO-workforce org's engagement to fulfil a Collect-mode request. Its agents
+    submit structured CollectionEntry rows, which are finalized into a Submission
+    that settles through the same engine (Mode 3)."""
+    __tablename__ = "collection_dispatches"
+    request_id = Column(UUID(as_uuid=True), ForeignKey("data_requests.id"), nullable=False)
+    org_id = Column(UUID(as_uuid=True), ForeignKey("user_auth.id", ondelete="CASCADE"), nullable=False)
+    status = Column(String, default="open")     # open | finalized | cancelled
+    submission_id = Column(UUID(as_uuid=True), ForeignKey("submissions.id"), nullable=True)  # set at finalize
+    request = relationship("DataRequest")
+    org = relationship("UserAuth")
+    __table_args__ = (Index("idx_dispatch_request", "request_id"),)
+
+
+class CollectionEntry(BaseModel):
+    """One structured field entry submitted by an agent against a dispatch. Validated
+    against the request's collection_spec (fields + geo/photo/consent QA) at submit."""
+    __tablename__ = "collection_entries"
+    dispatch_id = Column(UUID(as_uuid=True), ForeignKey("collection_dispatches.id"), nullable=False)
+    contributor_ref = Column(String)            # agent label / id within the org
+    data = Column(JSON, nullable=False)         # field values per collection_spec
+    geo_lat = Column(Float, nullable=True)
+    geo_lng = Column(Float, nullable=True)
+    photo_ref = Column(String, nullable=True)   # photo evidence reference
+    consent_basis = Column(String, nullable=True)   # consent captured for personal/location data
+    lawful_basis = Column(String, nullable=True)    # GDPR lawful basis
+    status = Column(String, default="valid")    # valid | rejected
+    validation_errors = Column(JSON, nullable=True)
+    __table_args__ = (Index("idx_entry_dispatch", "dispatch_id"),)
+
+
 class Purchase(BaseModel):
     """A buyer's purchase of a portion of a Listing, priced per record and settled
     through the same escrow/ledger as Request fulfilment (Mode 2)."""
