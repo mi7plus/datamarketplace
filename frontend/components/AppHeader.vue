@@ -17,8 +17,9 @@ const linkClass = (path) =>
 <template>
   <header class="bg-white border-b sticky top-0 z-50">
     <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-      <NuxtLink to="/" class="text-xl font-bold">
-        Data Exchange
+      <NuxtLink to="/" class="flex items-center gap-2.5" aria-label="Rowbound home">
+        <img src="/brand/Rowbound_icon_tile.svg" alt="" class="h-8 w-8" />
+        <span class="font-wordmark text-2xl font-bold text-ink tracking-tight">Rowbound</span>
       </NuxtLink>
 
       <nav class="flex items-center gap-6">

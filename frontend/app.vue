@@ -3,7 +3,7 @@
 // token from the httpOnly refresh cookie). No localStorage token here by design.
 </script>
 <template>
-  <div class="min-h-screen flex flex-col bg-gray-50">
+  <div class="min-h-screen flex flex-col bg-surface">
     <!-- Header -->
     <AppHeader />
 

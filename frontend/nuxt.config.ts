@@ -7,6 +7,20 @@ export default defineNuxtConfig({
     '@nuxtjs/tailwindcss',
     '@pinia/nuxt',
   ],
+  css: ['~/assets/css/main.css'],
+  app: {
+    head: {
+      title: 'Rowbound — The data clearing house',
+      meta: [
+        { name: 'description', content: 'Get exactly the data you need — buy it, request it, or collect it — and pay only for matching records.' },
+        { name: 'theme-color', content: '#0F1E3D' },
+      ],
+      link: [
+        { rel: 'icon', type: 'image/svg+xml', href: '/brand/Rowbound_icon_tile.svg' },
+        { rel: 'alternate icon', href: '/favicon.ico' },
+      ],
+    },
+  },
   runtimeConfig: {
     // Private: only available on server-side
     apiSecret: process.env.API_SECRET || '',
