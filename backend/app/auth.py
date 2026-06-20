@@ -18,6 +18,11 @@ SECRET_KEY = os.getenv("SECRET_KEY", "supersecret")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_HOURS = int(os.getenv("ACCESS_TOKEN_EXPIRE_HOURS", 1))
 
+# Login lockout (S3): after MAX_FAILED_LOGINS within a window, lock the account
+# for LOCKOUT_MINUTES (time-based, so an attacker can't permanently DoS a victim).
+MAX_FAILED_LOGINS = int(os.getenv("MAX_FAILED_LOGINS", "5"))
+LOCKOUT_MINUTES = int(os.getenv("LOCKOUT_MINUTES", "15"))
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -89,8 +94,28 @@ def login(
 ):
     user = db.query(User).filter(User.email == data.email).first()
 
+    # Reject while a lockout window is active (don't even check the password).
+    if user and user.locked_until and user.locked_until > datetime.utcnow():
+        raise HTTPException(
+            status_code=423,
+            detail="Account temporarily locked due to failed login attempts. Try again later.",
+        )
+
     if not user or not pwd_context.verify(data.password, user.password_hash):
+        # Count the failure and lock after the threshold (only for a real account).
+        if user:
+            user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+            if user.failed_login_attempts >= MAX_FAILED_LOGINS:
+                user.account_locked = True
+                user.locked_until = datetime.utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
+            db.commit()
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    # Success — clear the failure state.
+    user.failed_login_attempts = 0
+    user.account_locked = False
+    user.locked_until = None
+    user.last_login_at = datetime.utcnow()
 
     access_token = create_access_token(user.id)
     refresh_token = create_refresh_token(user.id)

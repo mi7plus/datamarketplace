@@ -72,9 +72,11 @@ class UserAuth(BaseModel):
     is_verified = Column(Boolean, default=False)
     account_locked = Column(Boolean, default=False)
     failed_login_attempts = Column(Integer, default=0)
+    locked_until = Column(DateTime, nullable=True)   # time-based lockout window (S3)
     last_login_at = Column(DateTime)
     # Stripe Connect account id for providers receiving payouts
     stripe_account_id = Column(String, nullable=True)
+    payout_account_changed_at = Column(DateTime, nullable=True)  # cool-down anchor (S3)
     profile = relationship("UserProfile", uselist=False, back_populates="user", cascade="all, delete-orphan")
     requests = relationship("DataRequest", back_populates="requester", cascade="all, delete-orphan")
     submissions = relationship("Submission", back_populates="provider", cascade="all, delete-orphan")
