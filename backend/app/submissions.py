@@ -664,7 +664,7 @@ def download(
     if submission.access_expiry and submission.access_expiry < datetime.utcnow():
         raise HTTPException(status_code=410, detail="This dataset has been taken down and is no longer available")
 
-    url = get_storage().presigned_url(submission.storage_location)
+    url = get_storage().presigned_url(submission.storage_location, filename=submission.content_link)
 
     # Record download in access_expiry (best-effort — not blocking)
     try:

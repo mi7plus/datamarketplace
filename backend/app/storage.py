@@ -9,12 +9,21 @@
 # S3_BUCKET in the environment; LocalStorage is the default.
 
 import os
+import re
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import boto3
 from botocore.exceptions import ClientError
+
+
+def _safe_filename(name: str | None) -> str:
+    """Sanitize a filename for a Content-Disposition header (no quotes, control
+    chars, or path separators)."""
+    base = os.path.basename(name or "dataset")
+    base = re.sub(r'[\r\n"\\/]', "_", base).strip()
+    return base or "dataset"
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -36,8 +45,14 @@ class StorageBackend(ABC):
     def exists(self, key: str) -> bool: ...
 
     @abstractmethod
-    def presigned_url(self, key: str, ttl_seconds: int = PRESIGNED_URL_TTL_SECONDS) -> str:
-        """Return a time-limited URL for direct download. Gate on submission status before calling."""
+    def presigned_url(
+        self,
+        key: str,
+        ttl_seconds: int = PRESIGNED_URL_TTL_SECONDS,
+        filename: str | None = None,
+    ) -> str:
+        """Return a time-limited URL for direct download, forcing attachment download
+        (never inline render). Gate on submission status before calling."""
 
 
 # ---------------------------------------------------------------------------
@@ -54,10 +69,16 @@ class LocalStorage(StorageBackend):
     def exists(self, key: str) -> bool:
         return (UPLOAD_DIR / key).exists()
 
-    def presigned_url(self, key: str, ttl_seconds: int = PRESIGNED_URL_TTL_SECONDS) -> str:
+    def presigned_url(
+        self,
+        key: str,
+        ttl_seconds: int = PRESIGNED_URL_TTL_SECONDS,
+        filename: str | None = None,
+    ) -> str:
         # Dev mode: return a local file URL — not truly gated, but functional for testing.
         # In production this path is never reached (MinIO replaces LocalStorage).
-        return f"/dev/storage/{key}"
+        fn = _safe_filename(filename or os.path.basename(key))
+        return f"/dev/storage/{key}?download={fn}"
 
 
 # ---------------------------------------------------------------------------
@@ -107,10 +128,23 @@ class MinioStorage(StorageBackend):
         except ClientError:
             return False
 
-    def presigned_url(self, key: str, ttl_seconds: int = PRESIGNED_URL_TTL_SECONDS) -> str:
+    def presigned_url(
+        self,
+        key: str,
+        ttl_seconds: int = PRESIGNED_URL_TTL_SECONDS,
+        filename: str | None = None,
+    ) -> str:
+        fn = _safe_filename(filename or os.path.basename(key))
         url = self._client.generate_presigned_url(
             "get_object",
-            Params={"Bucket": self._bucket, "Key": key},
+            Params={
+                "Bucket": self._bucket,
+                "Key": key,
+                # Force a download with a safe type so the browser never renders
+                # uploaded data inline (S2). Overrides any stored object headers.
+                "ResponseContentDisposition": f'attachment; filename="{fn}"',
+                "ResponseContentType": "application/octet-stream",
+            },
             ExpiresIn=ttl_seconds,
         )
         return url
