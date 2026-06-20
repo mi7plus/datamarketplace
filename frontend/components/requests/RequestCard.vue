@@ -44,8 +44,8 @@ const statusColour: Record<string, string> = {
                 <span>{{ accepted_total?.toLocaleString() ?? 0 }} / {{ amount_required?.toLocaleString() ?? '?' }} {{ unit ?? 'units' }}</span>
                 <span>{{ fillPct }}% filled</span>
             </div>
-            <div class="h-2 bg-gray-200 rounded">
-                <div class="h-2 bg-green-500 rounded transition-all"
+            <div class="h-2 bg-surface-border rounded">
+                <div class="h-2 bg-accent-deep rounded transition-all"
                     :style="{ width: fillPct + '%' }" />
             </div>
         </div>
