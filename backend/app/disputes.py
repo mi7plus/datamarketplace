@@ -55,7 +55,8 @@ def open(
 
     data_request = db.query(DataRequest).filter(DataRequest.id == str(submission.request_id)).first()
     if not data_request or str(data_request.requester_id) != str(current_user.id):
-        raise HTTPException(status_code=403, detail="Only the requester can open a dispute")
+        # 404, not 403 — don't leak the submission's existence to a non-buyer (S1).
+        raise HTTPException(status_code=404, detail="Submission not found")
 
     if submission.status not in (SubmissionStatus.ACCEPTED, SubmissionStatus.PARTIALLY_ACCEPTED):
         raise HTTPException(
@@ -196,7 +197,8 @@ def get_dispute(
         and str(data_request.requester_id) != str(current_user.id)
         and str(submission.provider_id) != str(current_user.id)
     ):
-        raise HTTPException(status_code=403, detail="Access denied")
+        # 404, not 403 — don't leak the dispute/submission existence to a third party (S1).
+        raise HTTPException(status_code=404, detail="No dispute for this submission")
 
     return {
         "dispute_id": str(dispute.id),

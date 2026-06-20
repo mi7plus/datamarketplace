@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from uuid import UUID
 
 from app.db import get_db
-from app.models import Submission, DataRequest, UserAuth as User, SubmissionStatus, RequestStatus
+from app.models import Submission, DataRequest, UserAuth as User, SubmissionStatus, RequestStatus, UserRole
 from app.auth import get_current_user
 from app.ingest import validate_dataset
 from app.lifecycle import validate_submission, accept_submission, transition_submission, expire_request, mark_paid
@@ -42,8 +42,9 @@ def _get_submission_or_404(submission_id: str, db: Session) -> Submission:
 
 
 def _require_request_owner(request: DataRequest, current_user: User) -> None:
+    # 404, not 403: never confirm to a non-owner that this object exists (S1).
     if str(request.requester_id) != str(current_user.id):
-        raise HTTPException(status_code=403, detail="Not your request")
+        raise HTTPException(status_code=404, detail="Request not found")
 
 
 def _serialize_submission(s: Submission) -> dict:
@@ -92,6 +93,10 @@ async def create_submission(
             status_code=409,
             detail=f"Request is not accepting submissions (status: {data_request.status})",
         )
+
+    # Role gate: only providers submit datasets (requesters post requests).
+    if current_user.role != UserRole.PROVIDER:
+        raise HTTPException(status_code=403, detail="Only providers can submit data")
 
     if not warranted:
         raise HTTPException(
@@ -187,6 +192,10 @@ def accept(
     if not data_request:
         raise HTTPException(status_code=404, detail="Request not found")
 
+    # Ownership FIRST (S1): a non-owner must get 404 regardless of the submission's
+    # status — never leak existence or state to someone who doesn't own the request.
+    _require_request_owner(data_request, current_user)
+
     # Re-load the submission under its own lock INSIDE the critical section.
     # The pre-check above may have seen VALIDATED before a concurrent accept committed.
     submission = (
@@ -203,8 +212,6 @@ def accept(
             status_code=409,
             detail=f"Submission is no longer available for acceptance (status: {getattr(submission, 'status', 'not found')})",
         )
-
-    _require_request_owner(data_request, current_user)
 
     if data_request.status not in (RequestStatus.OPEN, RequestStatus.PARTIALLY_FULFILLED):
         raise HTTPException(
@@ -453,7 +460,8 @@ def claim(
     """
     submission = _get_submission_or_404(submission_id, db)
     if str(submission.provider_id) != str(current_user.id):
-        raise HTTPException(status_code=403, detail="Not your submission")
+        # 404, not 403 — don't confirm this submission exists to a non-owner (S1).
+        raise HTTPException(status_code=404, detail="Submission not found")
 
     data_request = db.query(DataRequest).filter(DataRequest.id == str(submission.request_id)).first()
     if not data_request:
@@ -490,16 +498,18 @@ def reject(
     current_user: User = Depends(get_current_user),
 ):
     submission = _get_submission_or_404(submission_id, db)
+
+    # Ownership FIRST (S1): a non-owner gets 404 regardless of the submission status.
+    data_request = db.query(DataRequest).filter(DataRequest.id == str(submission.request_id)).first()
+    if not data_request:
+        raise HTTPException(status_code=404, detail="Request not found")
+    _require_request_owner(data_request, current_user)
+
     if submission.status != SubmissionStatus.VALIDATED:
         raise HTTPException(
             status_code=409,
             detail=f"Only VALIDATED submissions can be rejected (current: {submission.status})",
         )
-
-    data_request = db.query(DataRequest).filter(DataRequest.id == str(submission.request_id)).first()
-    if not data_request:
-        raise HTTPException(status_code=404, detail="Request not found")
-    _require_request_owner(data_request, current_user)
 
     submission = transition_submission(submission, SubmissionStatus.REJECTED, db)
     return _serialize_submission(submission)
@@ -678,7 +688,8 @@ def _assert_sample_access(submission: Submission, user: User, db) -> None:
     data_request = db.query(DataRequest).filter(DataRequest.id == str(submission.request_id)).first()
     if data_request and str(data_request.requester_id) == str(user.id):
         return
-    raise HTTPException(status_code=403, detail="Access denied")
+    # 404, not 403 — don't leak the submission's existence to a third party (S1).
+    raise HTTPException(status_code=404, detail="Submission not found")
 
 
 # ---------------------------------------------------------------------------

@@ -68,7 +68,8 @@ def fund_request(
     if not request:
         raise HTTPException(status_code=404, detail="Request not found")
     if str(request.requester_id) != str(current_user.id):
-        raise HTTPException(status_code=403, detail="Not your request")
+        # 404, not 403 — don't confirm this request exists to a non-owner (S1).
+        raise HTTPException(status_code=404, detail="Request not found")
     if request.status != RequestStatus.DRAFT:
         raise HTTPException(
             status_code=409,
@@ -101,7 +102,8 @@ def close_request(
     if not request:
         raise HTTPException(status_code=404, detail="Request not found")
     if str(request.requester_id) != str(current_user.id):
-        raise HTTPException(status_code=403, detail="Not your request")
+        # 404, not 403 — don't confirm this request exists to a non-owner (S1).
+        raise HTTPException(status_code=404, detail="Request not found")
 
     request = expire_request(request, db)
     _refund_unspent(request, db)
@@ -120,7 +122,8 @@ def get_ledger(
     if not request:
         raise HTTPException(status_code=404, detail="Request not found")
     if str(request.requester_id) != str(current_user.id):
-        raise HTTPException(status_code=403, detail="Not your request")
+        # 404, not 403 — don't confirm this request exists to a non-owner (S1).
+        raise HTTPException(status_code=404, detail="Request not found")
 
     entries = (
         db.query(Ledger)
