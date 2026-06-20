@@ -11,8 +11,14 @@ import hashlib
 from app.schemas import RegisterSchema, LoginSchema, TokenSchema
 from app.models import UserAuth as User
 from app.db import get_db
+from app.ratelimit import rate_limit
 
 router = APIRouter()
+
+# Per-IP throttles on brute-force-prone auth endpoints (S6).
+_login_rl = rate_limit("login", limit=10, window_seconds=60)
+_register_rl = rate_limit("register", limit=5, window_seconds=60)
+_refresh_rl = rate_limit("refresh", limit=30, window_seconds=60)
 
 SECRET_KEY = os.getenv("SECRET_KEY", "supersecret")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
@@ -63,7 +69,7 @@ def _hash_refresh_token(token: str) -> str:
 # -----------------------------
 
 @router.post("/register")
-def register(data: RegisterSchema, db: Session = Depends(get_db)):
+def register(data: RegisterSchema, db: Session = Depends(get_db), _rl=Depends(_register_rl)):
     if db.query(User).filter(User.email == data.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -90,7 +96,8 @@ def register(data: RegisterSchema, db: Session = Depends(get_db)):
 def login(
     data: LoginSchema,
     db: Session = Depends(get_db),
-    response: Response = None
+    response: Response = None,
+    _rl=Depends(_login_rl),
 ):
     user = db.query(User).filter(User.email == data.email).first()
 
@@ -142,7 +149,8 @@ def login(
 @router.get("/refresh")
 def refresh_token(
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _rl=Depends(_refresh_rl),
 ):
     refresh_token = request.cookies.get("refresh_token")
 
