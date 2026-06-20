@@ -62,6 +62,43 @@ class RequestSpec(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Collection (Mode 3) form spec
+# ---------------------------------------------------------------------------
+
+class CollectionField(BaseModel):
+    name: str
+    type: Literal["string", "integer", "float", "boolean", "date", "datetime"]
+    required: bool = True
+
+
+class CollectionSpec(BaseModel):
+    """Form spec for a Collect-mode request: what agents fill in, plus the field
+    QA requirements (geo-stamp, photo evidence, consent/lawful-basis)."""
+    fields: List[CollectionField]
+    unique_key: Optional[List[str]] = None      # dedup key across collected entries
+    geo_required: bool = False
+    photo_required: bool = False
+    consent_required: bool = False
+    coverage: Optional[List[str]] = None        # coverage units, e.g. regions / SKUs
+
+    @field_validator("fields")
+    @classmethod
+    def at_least_one_field(cls, v):
+        if len(v) < 1:
+            raise ValueError("Collection spec must have at least one field")
+        return v
+
+    @model_validator(mode="after")
+    def unique_key_fields_exist(self) -> "CollectionSpec":
+        if self.unique_key:
+            names = {f.name for f in self.fields}
+            missing = [k for k in self.unique_key if k not in names]
+            if missing:
+                raise ValueError(f"unique_key references unknown fields: {missing}")
+        return self
+
+
+# ---------------------------------------------------------------------------
 # Data Requests
 # ---------------------------------------------------------------------------
 
@@ -75,8 +112,16 @@ class DataRequestCreateSchema(BaseModel):
     budget: Optional[float] = None      # derived for per_unit; required for fixed_bounty
     required_format: Literal["csv", "jsonl"] = "csv"
     spec: Optional[RequestSpec] = None
+    mode: Literal["request", "collect"] = "request"
+    collection_spec: Optional[CollectionSpec] = None
     deadline: Optional[str] = None      # ISO datetime string; stored as DateTime
     license_id: Optional[UUID] = None
+
+    @model_validator(mode="after")
+    def validate_mode(self) -> "DataRequestCreateSchema":
+        if self.mode == "collect" and self.collection_spec is None:
+            raise ValueError("collection_spec is required for collect-mode requests")
+        return self
 
     @model_validator(mode="after")
     def validate_pricing(self) -> "DataRequestCreateSchema":
@@ -104,6 +149,8 @@ class DataRequestResponseSchema(BaseModel):
     budget: Optional[float] = None
     required_format: Optional[str] = None
     spec: Optional[dict] = None
+    mode: Optional[str] = "request"
+    collection_spec: Optional[dict] = None
     deadline: Optional[str] = None
     status: str
     accepted_total: Optional[int] = None
