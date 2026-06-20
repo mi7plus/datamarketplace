@@ -217,3 +217,40 @@ def logout(
     db.commit()
     response.delete_cookie("refresh_token")
     return {"msg": "Logged out"}
+
+
+# -----------------------------
+# CHANGE PASSWORD
+# -----------------------------
+
+from pydantic import BaseModel as _PydanticModel
+
+
+class ChangePassword(_PydanticModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password")
+def change_password(
+    data: ChangePassword,
+    response: Response,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Change password after re-authenticating with the current one, and REVOKE all
+    existing sessions: clearing refresh_token_hash makes every outstanding refresh
+    cookie dead (a subsequent /auth/refresh returns 401), so a thief who grabbed a
+    cookie is logged out the moment the real owner rotates their password (S3).
+    """
+    if not pwd_context.verify(data.current_password, current_user.password_hash):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    if len(data.new_password) < 8:
+        raise HTTPException(status_code=422, detail="New password must be at least 8 characters")
+
+    current_user.password_hash = pwd_context.hash(data.new_password)
+    current_user.refresh_token_hash = None      # revoke all refresh sessions
+    db.commit()
+    response.delete_cookie("refresh_token")
+    return {"msg": "Password changed — all sessions signed out"}
