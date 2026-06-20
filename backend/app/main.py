@@ -25,11 +25,23 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=origins,          # explicit origins — never "*" (required with credentials)
     allow_credentials=True,
     allow_methods=["*"],  # GET, POST, etc
     allow_headers=["*"],  # all headers
 )
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    """Baseline security headers on every API response (S6). nosniff matters most
+    for an API that hands out files/JSON; HSTS is honoured once served over HTTPS."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+    return response
 
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(requests_router, prefix="/requests", tags=["requests"])

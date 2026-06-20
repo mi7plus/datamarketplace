@@ -8,6 +8,18 @@ export default defineNuxtConfig({
     '@pinia/nuxt',
   ],
   css: ['~/assets/css/main.css'],
+  // Baseline security headers on every route (S6). A full strict CSP needs the
+  // nuxt-security module + nonces to avoid breaking Nuxt hydration — tracked as
+  // a follow-up; these non-breaking headers land now.
+  routeRules: {
+    '/**': {
+      headers: {
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'Referrer-Policy': 'no-referrer',
+      },
+    },
+  },
   app: {
     head: {
       title: 'Rowbound — The data clearing house',
