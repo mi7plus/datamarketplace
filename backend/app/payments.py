@@ -33,6 +33,7 @@ def append_ledger(
     amount,
     external_ref: str,
     submission_id=None,
+    purchase_id=None,
 ) -> Ledger:
     # Idempotency: if this external_ref was already recorded, return existing row.
     # Prevents double-recording on webhook redelivery or retry after partial failure.
@@ -43,6 +44,7 @@ def append_ledger(
     entry = Ledger(
         request_id=request_id,
         submission_id=submission_id,
+        purchase_id=purchase_id,
         entry_type=entry_type,
         amount=_to_decimal(amount),
         external_ref=external_ref,
@@ -50,6 +52,16 @@ def append_ledger(
     db.add(entry)
     db.flush()
     return entry
+
+
+def purchase_balance(db: Session, purchase_id) -> dict:
+    """Same {held, released, refunded, remaining} as ledger_balance, keyed by a Purchase."""
+    entries = db.query(Ledger).filter(Ledger.purchase_id == str(purchase_id)).all()
+    held     = sum((_to_decimal(e.amount) for e in entries if e.entry_type == "hold"),     Decimal("0"))
+    released = sum((_to_decimal(e.amount) for e in entries if e.entry_type == "release"), Decimal("0"))
+    refunded = sum((_to_decimal(e.amount) for e in entries if e.entry_type == "refund"),  Decimal("0"))
+    return {"held": held, "released": released, "refunded": refunded,
+            "remaining": held - released - refunded}
 
 
 def ledger_balance(db: Session, request_id) -> dict:

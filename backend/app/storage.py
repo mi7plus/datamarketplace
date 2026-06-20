@@ -45,6 +45,10 @@ class StorageBackend(ABC):
     def exists(self, key: str) -> bool: ...
 
     @abstractmethod
+    def read(self, key: str) -> bytes:
+        """Read raw bytes back (used to slice a purchased portion of a listing)."""
+
+    @abstractmethod
     def presigned_url(
         self,
         key: str,
@@ -68,6 +72,9 @@ class LocalStorage(StorageBackend):
 
     def exists(self, key: str) -> bool:
         return (UPLOAD_DIR / key).exists()
+
+    def read(self, key: str) -> bytes:
+        return (UPLOAD_DIR / key).read_bytes()
 
     def presigned_url(
         self,
@@ -127,6 +134,10 @@ class MinioStorage(StorageBackend):
             return True
         except ClientError:
             return False
+
+    def read(self, key: str) -> bytes:
+        obj = self._client.get_object(Bucket=self._bucket, Key=key)
+        return obj["Body"].read()
 
     def presigned_url(
         self,

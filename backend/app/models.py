@@ -272,6 +272,22 @@ class Listing(BaseModel):
     )
 
 
+class Purchase(BaseModel):
+    """A buyer's purchase of a portion of a Listing, priced per record and settled
+    through the same escrow/ledger as Request fulfilment (Mode 2)."""
+    __tablename__ = "purchases"
+    listing_id = Column(UUID(as_uuid=True), ForeignKey("listings.id"), nullable=False)
+    buyer_id = Column(UUID(as_uuid=True), ForeignKey("user_auth.id", ondelete="CASCADE"), nullable=False)
+    quantity = Column(Integer, nullable=False)
+    unit_price = Column(Numeric(12, 2), nullable=False)     # snapshot at purchase time
+    amount = Column(Numeric(12, 2), nullable=False)         # quantity × unit_price
+    status = Column(String, default="pending")              # pending | paid | refunded
+    storage_location = Column(String)
+    listing = relationship("Listing")
+    buyer = relationship("UserAuth")
+    __table_args__ = (Index("idx_purchase_buyer", "buyer_id"),)
+
+
 class SubmissionFlag(Base):
     """A report against a submission (illegal / non-consented / infringing data).
     A flag quarantines the dataset pending admin review (S4)."""
@@ -290,14 +306,20 @@ class SubmissionFlag(Base):
 class Ledger(BaseModel):
     """Append-only escrow ledger. Derive balances by summing; never mutate rows."""
     __tablename__ = "ledger"
-    request_id = Column(UUID(as_uuid=True), ForeignKey("data_requests.id"), nullable=False)
+    # Exactly one settlement context is set: a Request (Mode 1/3) or a Purchase (Mode 2).
+    request_id = Column(UUID(as_uuid=True), ForeignKey("data_requests.id"), nullable=True)
+    purchase_id = Column(UUID(as_uuid=True), ForeignKey("purchases.id"), nullable=True)
     submission_id = Column(UUID(as_uuid=True), ForeignKey("submissions.id"), nullable=True)
     entry_type = Column(String, nullable=False)   # "hold" | "release" | "refund"
     amount = Column(Numeric(12, 2), nullable=False)
     external_ref = Column(String, nullable=True, unique=True)  # Stripe payment intent / transfer id; unique prevents double-record
     request = relationship("DataRequest")
     submission = relationship("Submission")
-    __table_args__ = (Index("idx_ledger_request_id", "request_id"),)
+    purchase = relationship("Purchase")
+    __table_args__ = (
+        Index("idx_ledger_request_id", "request_id"),
+        Index("idx_ledger_purchase_id", "purchase_id"),
+    )
 
 
 class ProcessedStripeEvent(Base):
