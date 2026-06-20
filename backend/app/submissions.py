@@ -17,6 +17,7 @@ from app.lifecycle import validate_submission, accept_submission, transition_sub
 from app.storage import get_storage
 from app.payments import get_payment_provider, ledger_balance
 from app.reviews import _increment_transactions
+from app.notifications import notify
 
 ACCEPTANCE_WINDOW_HOURS = int(os.getenv("ACCEPTANCE_WINDOW_HOURS", "72"))
 # Releases to a just-changed payout destination are held for this long (S3).
@@ -738,16 +739,18 @@ def takedown(
     outstanding pre-signed URL so the file becomes unreachable.
     The underlying file in storage is NOT deleted (preserve for legal review).
     """
+    import uuid as _uuid
     from app.models import UserRole
     if current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Admin only")
 
     submission = _get_submission_or_404(submission_id, db)
 
-    # Revoke access: expire the URL gate immediately
-    submission.access_expiry = datetime.utcnow()
-    # Soft-delete so it disappears from all queries
-    submission.is_deleted = True
+    # Revoke access on every axis:
+    submission.access_expiry = datetime.utcnow()      # expire the URL gate now
+    submission.quarantined = True                     # block the delivery gate
+    submission.access_token_id = _uuid.uuid4().hex    # rotate → any outstanding token is dead
+    submission.is_deleted = True                      # disappears from all queries
 
     db.commit()
     return {
@@ -755,3 +758,67 @@ def takedown(
         "status": "taken_down",
         "message": "Submission removed and URL access revoked. File preserved for legal review.",
     }
+
+
+# ---------------------------------------------------------------------------
+# Reporter flow: anyone can flag a submission → quarantine pending admin review
+# ---------------------------------------------------------------------------
+
+@router.post("/{submission_id}/report")
+def report_submission(
+    submission_id: str,
+    reason: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Flag a submission as illegal / non-consented / infringing. Quarantines the
+    dataset (blocks delivery) pending admin review. A provider cannot report their
+    own submission. One report per reporter per submission.
+    """
+    from app.models import SubmissionFlag
+    submission = _get_submission_or_404(submission_id, db)
+    if str(submission.provider_id) == str(current_user.id):
+        raise HTTPException(status_code=403, detail="You cannot report your own submission")
+
+    existing = db.query(SubmissionFlag).filter(
+        SubmissionFlag.submission_id == str(submission.id),
+        SubmissionFlag.reporter_id == str(current_user.id),
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="You have already reported this submission")
+
+    db.add(SubmissionFlag(
+        submission_id=submission.id,
+        reporter_id=current_user.id,
+        reason=reason,
+    ))
+    submission.quarantined = True
+    db.commit()
+
+    notify(
+        None,
+        "Submission reported",
+        f"Submission {submission_id} was reported and quarantined pending review. Reason: {reason}",
+    )
+    return {"submission_id": submission_id, "status": "quarantined"}
+
+
+# ---------------------------------------------------------------------------
+# Admin: clear a quarantine after review (false positive)
+# ---------------------------------------------------------------------------
+
+@router.post("/{submission_id}/unquarantine")
+def unquarantine(
+    submission_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Admin clears a quarantine after reviewing (e.g. PII false positive)."""
+    from app.models import UserRole
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    submission = _get_submission_or_404(submission_id, db)
+    submission.quarantined = False
+    db.commit()
+    return {"submission_id": submission_id, "status": "cleared"}

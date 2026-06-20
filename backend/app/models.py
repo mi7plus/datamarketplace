@@ -229,6 +229,21 @@ class AcceptedKey(Base):
     )
 
 
+class SubmissionFlag(Base):
+    """A report against a submission (illegal / non-consented / infringing data).
+    A flag quarantines the dataset pending admin review (S4)."""
+    __tablename__ = "submission_flags"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    submission_id = Column(UUID(as_uuid=True), ForeignKey("submissions.id"), nullable=False)
+    reporter_id = Column(UUID(as_uuid=True), ForeignKey("user_auth.id", ondelete="CASCADE"), nullable=False)
+    reason = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (
+        Index("idx_submission_flags_submission", "submission_id"),
+        __import__("sqlalchemy").UniqueConstraint("submission_id", "reporter_id", name="uq_submission_flag"),
+    )
+
+
 class Ledger(BaseModel):
     """Append-only escrow ledger. Derive balances by summing; never mutate rows."""
     __tablename__ = "ledger"
