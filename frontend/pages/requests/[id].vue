@@ -64,6 +64,29 @@ async function doAction(submissionId: string, action: 'accept' | 'reject') {
     }
 }
 
+async function confirmSubmission(submissionId: string) {
+    actioning.value = submissionId
+    actionError.value = null
+    try {
+        await api.post(`/submissions/${submissionId}/confirm`, {})
+        await Promise.all([loadRequest(), loadSubmissions(), loadLedger()])
+    } catch (e: any) {
+        actionError.value = e.message
+    } finally {
+        actioning.value = null
+    }
+}
+
+// Human-readable acceptance-window countdown from a submission's confirm_by.
+function windowRemaining(confirmBy: string | null): string | null {
+    if (!confirmBy) return null
+    const ms = new Date(confirmBy).getTime() - Date.now()
+    if (ms <= 0) return 'window elapsed — auto-release pending'
+    const h = Math.floor(ms / 3.6e6)
+    const m = Math.floor((ms % 3.6e6) / 6e4)
+    return (h > 0 ? `${h}h ${m}m` : `${m}m`) + ' left to confirm or dispute'
+}
+
 async function expireRequest() {
     if (!confirm('Close this request and refund unspent budget?')) return
     actionError.value = null
@@ -298,11 +321,23 @@ const subColour: Record<string, string> = {
                 <div v-for="s in validatedSubmissions" :key="s.id"
                     class="border-2 border-blue-200 rounded-lg p-4 bg-blue-50 space-y-3">
 
-                    <div class="flex justify-between items-start">
+                    <div class="flex justify-between items-start gap-2">
                         <div class="text-xs font-mono text-gray-400">{{ s.id.slice(0, 8) }}…</div>
-                        <span class="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                            validated
-                        </span>
+                        <div class="flex items-center gap-1.5 flex-wrap justify-end">
+                            <span v-if="s.quality_score != null"
+                                class="text-xs px-2 py-0.5 rounded-full bg-accent/15 text-accent-deep">
+                                Quality {{ Math.round(s.quality_score * 100) }}%
+                            </span>
+                            <span v-if="s.pii_report?.risk && s.pii_report.risk !== 'none'"
+                                class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                                PII: {{ s.pii_report.risk }}
+                            </span>
+                            <span v-if="s.quarantined"
+                                class="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
+                                under review
+                            </span>
+                            <span class="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">validated</span>
+                        </div>
                     </div>
 
                     <!-- Validation summary -->
@@ -394,15 +429,48 @@ const subColour: Record<string, string> = {
                         <dt>Accepted</dt><dd>{{ s.accepted_amount?.toLocaleString() ?? 0 }}</dd>
                         <dt>Amount due</dt><dd>{{ s.amount_due != null ? `$${s.amount_due}` : '—' }}</dd>
                     </dl>
-                    <!-- Download (PAID only) -->
-                    <div v-if="s.status === 'paid'" class="pt-1 flex flex-wrap gap-3 items-start">
-                        <DownloadButton :submission-id="s.id" />
-                        <ReviewForm :submission-id="s.id" @reviewed="loadSubmissions" />
+                    <!-- Settlement state badges -->
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <span v-if="s.quality_score != null" class="text-xs text-muted">
+                            Quality {{ Math.round(s.quality_score * 100) }}%
+                        </span>
+                        <span v-if="s.quarantined" class="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
+                            under review
+                        </span>
                     </div>
 
-                    <!-- Dispute (ACCEPTED / PARTIALLY_ACCEPTED) -->
-                    <div v-if="['accepted','partially_accepted'].includes(s.status)" class="pt-1">
-                        <DisputeButton :submission-id="s.id" @disputed="loadSubmissions" />
+                    <!-- Acceptance window: escrow HELD, buyer confirms or disputes -->
+                    <div v-if="['accepted','partially_accepted'].includes(s.status)"
+                        class="pt-2 mt-1 border-t space-y-2">
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="text-accent-deep font-medium">● Escrow held — awaiting confirmation</span>
+                            <span v-if="windowRemaining(s.confirm_by)" class="text-muted">
+                                {{ windowRemaining(s.confirm_by) }}
+                            </span>
+                        </div>
+                        <div class="flex flex-wrap gap-3 items-center">
+                            <button v-if="auth.user?.role === 'requester'"
+                                @click="confirmSubmission(s.id)"
+                                :disabled="actioning === s.id"
+                                class="px-4 py-1.5 rounded bg-accent-deep text-white text-sm hover:bg-accent disabled:opacity-50">
+                                {{ actioning === s.id ? 'Releasing…' : 'Confirm & release escrow' }}
+                            </button>
+                            <!-- Buyer may inspect the full file before releasing (F4) -->
+                            <DownloadButton :submission-id="s.id" />
+                            <DisputeButton :submission-id="s.id" @disputed="loadSubmissions" />
+                        </div>
+                    </div>
+
+                    <!-- Disputed: release paused pending admin -->
+                    <div v-else-if="s.status === 'disputed'" class="pt-2 mt-1 border-t text-xs text-orange-700">
+                        ⚠ Dispute open — escrow release paused pending admin resolution.
+                    </div>
+
+                    <!-- Settled: download + review -->
+                    <div v-else-if="s.status === 'paid'" class="pt-2 mt-1 border-t flex flex-wrap gap-3 items-start">
+                        <span class="text-xs text-accent-deep font-medium w-full">● Settled — escrow released to provider</span>
+                        <DownloadButton :submission-id="s.id" />
+                        <ReviewForm :submission-id="s.id" @reviewed="loadSubmissions" />
                     </div>
                 </div>
             </div>
