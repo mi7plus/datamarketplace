@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import PageWrapper from '~/components/layout/PageWrapper.vue'
+import ThreeModes from '~/components/ThreeModes.vue'
 </script>
 
 <template>
-  <PageWrapper class="flex flex-col justify-center items-center">
+  <PageWrapper class="flex flex-col justify-center items-center py-12">
     <img src="/brand/Rowbound_icon_tile.svg" alt="Rowbound" class="h-16 w-16 mb-6" />
     <h1 class="font-wordmark text-4xl md:text-5xl font-bold mb-4 text-center text-ink">
       Get exactly the data you need
@@ -28,6 +29,10 @@ import PageWrapper from '~/components/layout/PageWrapper.vue'
       >
         Browse Requests
       </NuxtLink>
+    </div>
+
+    <div class="mt-16 w-full">
+      <ThreeModes />
     </div>
   </PageWrapper>
 </template>

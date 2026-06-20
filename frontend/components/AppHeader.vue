@@ -10,8 +10,8 @@ const logout = async () => {
 }
 const linkClass = (path) =>
     route.path.startsWith(path)
-        ? 'text-black font-semibold'
-        : 'text-gray-600 hover:text-black'
+        ? 'text-ink font-semibold'
+        : 'text-muted hover:text-ink transition-colors'
 </script>
 
 <template>
@@ -23,6 +23,9 @@ const linkClass = (path) =>
       </NuxtLink>
 
       <nav class="flex items-center gap-6">
+        <NuxtLink to="/" :class="route.path === '/' ? 'text-ink font-semibold' : 'text-muted hover:text-ink transition-colors'">
+          Get data
+        </NuxtLink>
         <NuxtLink v-if="auth.isAuthenticated" to="/requests" :class="linkClass('/requests')">
           Browse Requests
         </NuxtLink>
