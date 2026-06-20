@@ -37,6 +37,23 @@ class ValidationResult:
     validation_report: dict
     sample: list[dict]
     key_hashes: list[str] = field(default_factory=list)  # per-record SHA-256 for dedup (populated when spec has unique_key)
+    quality_score: float = 0.0  # 0..1 composite (conformance × completeness × uniqueness)
+
+
+# Spreadsheet formula-injection triggers. We never mutate the stored/paid dataset,
+# but the SAMPLE PREVIEW is our own UI surface, so neutralize leading triggers there
+# so a cell like `=cmd|...` is inert when shown or pasted into a spreadsheet.
+_FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _neutralize_cell(v):
+    if isinstance(v, str) and v and v[0] in _FORMULA_TRIGGERS:
+        return "'" + v
+    return v
+
+
+def _neutralize_sample(rows: list[dict]) -> list[dict]:
+    return [{k: _neutralize_cell(val) for k, val in row.items()} for row in rows]
 
 
 def _parse_value(raw: str, col_type: str) -> tuple[bool, Any]:
@@ -143,7 +160,8 @@ def validate_dataset(
         conforming.append(parsed)
 
     validated_amount = len(conforming)
-    sample = conforming[:SAMPLE_ROWS]
+    # Neutralize formula triggers in the PREVIEW only (the paid dataset is untouched).
+    sample = _neutralize_sample(conforming[:SAMPLE_ROWS])
 
     # Build per-record key hashes for cross-provider dedup (F3).
     # Each hash is SHA-256 of the canonical key-tuple string for that record.
@@ -153,6 +171,29 @@ def validate_dataset(
             key_val = tuple(str(parsed_row.get(k, "")) for k in unique_key)
             key_hashes.append(hashlib.sha256(repr(key_val).encode()).hexdigest())
 
+    # ---- Statistical / consistency signals → quality_score (S2) ----
+    # conformance: how much of the upload was usable; duplicate_density: within-
+    # submission redundancy; completeness: optional-column fill rate. quality_score
+    # is a 0..1 composite surfaced to the buyer and stored on the submission.
+    conformance_rate = (validated_amount / total_rows) if total_rows else 0.0
+    duplicate_density = (dupe_count / total_rows) if total_rows else 0.0
+
+    optional_cols = [c["name"] for c in spec_columns if not c.get("required", True)]
+    null_rate = 0.0
+    if optional_cols and conforming:
+        cells = len(optional_cols) * len(conforming)
+        filled = sum(
+            1 for r in conforming for c in optional_cols
+            if r.get(c) not in (None, "")
+        )
+        null_rate = round(1 - (filled / cells), 4) if cells else 0.0
+
+    completeness = 1.0 - null_rate
+    quality_score = round(
+        max(0.0, min(1.0, conformance_rate * (1.0 - duplicate_density) * completeness)),
+        4,
+    )
+
     report = {
         "total_rows": total_rows,
         "conforming_rows": validated_amount,
@@ -160,6 +201,12 @@ def validate_dataset(
         "duplicate_rows": dupe_count,
         "sample_rows": len(sample),
         "row_errors": row_errors,
+        "stats": {
+            "conformance_rate": round(conformance_rate, 4),
+            "duplicate_density": round(duplicate_density, 4),
+            "null_rate": null_rate,
+            "quality_score": quality_score,
+        },
     }
     if unique_key:
         report["unique_key"] = unique_key
@@ -171,6 +218,7 @@ def validate_dataset(
         validation_report=report,
         sample=sample,
         key_hashes=key_hashes,
+        quality_score=quality_score,
     )
 
 

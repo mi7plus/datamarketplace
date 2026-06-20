@@ -60,6 +60,7 @@ def _serialize_submission(s: Submission) -> dict:
         "amount_due": s.amount_due,
         "content_link": s.content_link,
         "dataset_hash": s.dataset_hash,
+        "quality_score": s.quality_score,
         "validation_report": s.validation_report,
         "created_at": s.created_at.isoformat() if s.created_at else None,
         "accepted_at": s.accepted_at.isoformat() if s.accepted_at else None,
@@ -144,6 +145,7 @@ async def create_submission(
         dataset_hash=result.dataset_hash,
         owner_signature=warranty_sig,
         key_hashes=result.key_hashes or None,
+        quality_score=result.quality_score,
     )
     db.add(submission)
     db.flush()
