@@ -229,6 +229,49 @@ class AcceptedKey(Base):
     )
 
 
+class ListingStatus(str, enum.Enum):
+    ACTIVE = "active"
+    PAUSED = "paused"
+    SOLD_OUT = "sold_out"
+    TAKEN_DOWN = "taken_down"
+
+
+class Listing(BaseModel):
+    """
+    A pre-listed dataset a supplier offers for sale, priced per record (Mode 2 —
+    Buy existing). Reuses the Request spec + ingest validation + dataset-hash +
+    PII/quality machinery; buyers purchase any portion, settled per record through
+    the same escrow/ledger.
+    """
+    __tablename__ = "listings"
+    supplier_id = Column(UUID(as_uuid=True), ForeignKey("user_auth.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String, nullable=False)
+    description = Column(Text)
+    unit = Column(String)                              # "row", "record", ...
+    price_per_unit = Column(Numeric(12, 2), nullable=False)
+    available_quantity = Column(Integer, nullable=False, default=0)   # decremented on purchase
+    validated_amount = Column(Integer, nullable=False, default=0)     # full count at ingest
+    required_format = Column(String)
+    spec = Column(JSON, nullable=True)
+    license_id = Column(UUID(as_uuid=True), ForeignKey("licenses.id"), nullable=True)
+    provenance = Column(Text)                          # where the data came from (compliance moat)
+    sample = Column(JSON, nullable=True)               # neutralized preview rows
+    dataset_hash = Column(String)
+    storage_location = Column(String)
+    key_hashes = Column(JSON, nullable=True)           # for cross-mode dedup (Phase 6)
+    quality_score = Column(Float, default=0)
+    pii_report = Column(JSON, nullable=True)
+    quarantined = Column(Boolean, default=False)
+    owner_signature = Column(String)                   # supplier warranty
+    status = Column(Enum(ListingStatus, name="listing_status_enum"), default=ListingStatus.ACTIVE, nullable=False)
+    supplier = relationship("UserAuth")
+    license = relationship("License")
+    __table_args__ = (
+        Index("idx_listing_status", "status", "is_deleted"),
+        Index("idx_listing_supplier", "supplier_id"),
+    )
+
+
 class SubmissionFlag(Base):
     """A report against a submission (illegal / non-consented / infringing data).
     A flag quarantines the dataset pending admin review (S4)."""

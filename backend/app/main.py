@@ -8,6 +8,7 @@ from app.profile import router as profile_router
 from app.webhooks import router as webhooks_router
 from app.reviews import router as reviews_router
 from app.disputes import router as disputes_router
+from app.listings import router as listings_router
 from dotenv import load_dotenv
 from pathlib import Path
 import os
@@ -50,6 +51,7 @@ app.include_router(profile_router, prefix="/profile", tags=["profile"])
 app.include_router(webhooks_router, prefix="/webhooks", tags=["webhooks"])
 app.include_router(reviews_router, prefix="/reviews", tags=["reviews"])
 app.include_router(disputes_router, prefix="/disputes", tags=["disputes"])
+app.include_router(listings_router, prefix="/listings", tags=["listings"])
 
 
 # Background auto-release sweep: pays out ACCEPTED submissions whose acceptance
