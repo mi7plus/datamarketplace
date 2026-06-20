@@ -5,9 +5,10 @@
 # Reuses the same ingest validation, file-safety, PII/quality, and dataset-hash
 # machinery as Request submissions.
 
+import os
 import json
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
@@ -21,10 +22,12 @@ from app.auth import get_current_user
 from app.ingest import validate_dataset
 from app.filesafety import assert_safe_text_upload
 from app.storage import get_storage
-from app.payments import append_ledger, purchase_balance
+from app.payments import purchase_balance, get_payment_provider
 
 router = APIRouter()
 purchases_router = APIRouter()
+
+PAYOUT_COOLDOWN_HOURS = int(os.getenv("PAYOUT_COOLDOWN_HOURS", "24"))
 
 MAX_FILE_BYTES = 100 * 1024 * 1024
 ALLOWED_EXTENSIONS = {"csv", "jsonl"}
@@ -243,6 +246,21 @@ def purchase_listing(
     unit_price = Decimal(str(listing.price_per_unit))
     amount = (Decimal(qty) * unit_price).quantize(Decimal("0.01"))
 
+    payment = get_payment_provider()
+    supplier = db.query(User).filter(User.id == str(listing.supplier_id)).first()
+
+    # Real-money mode only: the supplier must be able to receive funds and not be in
+    # a payout cool-down. Checked BEFORE charging the buyer. In demo/dev mode
+    # (FakePaymentProvider, requires_connected_account=False) these are skipped, so
+    # the platform runs end-to-end with no Stripe setup.
+    if payment.requires_connected_account:
+        if not supplier or not supplier.stripe_account_id:
+            raise HTTPException(status_code=409, detail="This supplier cannot receive payouts yet.")
+        if supplier.payout_account_changed_at and \
+           datetime.utcnow() < supplier.payout_account_changed_at + timedelta(hours=PAYOUT_COOLDOWN_HOURS):
+            raise HTTPException(status_code=409,
+                                detail="Supplier payout account changed recently — temporarily unavailable.")
+
     purchase = Purchase(
         listing_id=listing.id, buyer_id=current_user.id,
         quantity=qty, unit_price=unit_price, amount=amount, status="pending",
@@ -256,9 +274,10 @@ def purchase_listing(
     pkey = f"purchases/{current_user.id}/{purchase.id}.{listing.required_format or 'csv'}"
     purchase.storage_location = get_storage().save(pkey, sliced)
 
-    # Settle through the ledger: hold then release (deterministic refs → idempotent).
-    append_ledger(db, None, "hold", amount, f"phold_{purchase.id}", purchase_id=purchase.id)
-    append_ledger(db, None, "release", amount, f"prelease_{purchase.id}", purchase_id=purchase.id)
+    # Settle through the SAME payment provider as Request fulfilment: charge the
+    # buyer, transfer to the supplier. Idempotent (keyed by purchase id).
+    payment.hold_purchase(purchase, db)
+    payment.release_purchase(purchase, supplier, db)
     purchase.status = "paid"
 
     listing.available_quantity -= qty

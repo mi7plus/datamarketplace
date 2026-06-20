@@ -84,6 +84,11 @@ def ledger_balance(db: Session, request_id) -> dict:
 # ---------------------------------------------------------------------------
 
 class PaymentProvider(ABC):
+    # True for real money providers: the supplier/provider must have a connected
+    # payout account before funds can be released. False for the dev/demo Fake
+    # provider, so the platform runs end-to-end with no Stripe setup.
+    requires_connected_account: bool = False
+
     @abstractmethod
     def hold_escrow(self, request: DataRequest, db: Session) -> str:
         """Reserve request.budget from the buyer. Returns external_ref."""
@@ -99,6 +104,16 @@ class PaymentProvider(ABC):
     @abstractmethod
     def create_connect_link(self, user: UserAuth, return_url: str, refresh_url: str) -> tuple[str, str]:
         """Return (onboarding_url, stripe_account_id) for provider Connect onboarding."""
+
+    # --- Mode 2 (catalog) purchase settlement ---
+
+    @abstractmethod
+    def hold_purchase(self, purchase, db: Session) -> str:
+        """Charge the buyer purchase.amount. Returns external_ref."""
+
+    @abstractmethod
+    def release_purchase(self, purchase, supplier, db: Session) -> str:
+        """Transfer purchase.amount to the supplier's connected account. Returns external_ref."""
 
 
 # ---------------------------------------------------------------------------
@@ -145,12 +160,24 @@ class FakePaymentProvider(PaymentProvider):
         )
         return url, acct_id
 
+    def hold_purchase(self, purchase, db: Session) -> str:
+        ref = f"fake_phold_{purchase.id}"
+        append_ledger(db, None, "hold", purchase.amount or 0.0, ref, purchase_id=purchase.id)
+        return ref
+
+    def release_purchase(self, purchase, supplier, db: Session) -> str:
+        ref = f"fake_prelease_{purchase.id}"
+        append_ledger(db, None, "release", purchase.amount or 0.0, ref, purchase_id=purchase.id)
+        return ref
+
 
 # ---------------------------------------------------------------------------
 # Real Stripe provider
 # ---------------------------------------------------------------------------
 
 class StripePaymentProvider(PaymentProvider):
+    requires_connected_account = True
+
     def __init__(self, secret_key: str):
         stripe.api_key = secret_key
 
@@ -222,6 +249,31 @@ class StripePaymentProvider(PaymentProvider):
             type="account_onboarding",
         )
         return link.url, acct_id
+
+    def hold_purchase(self, purchase, db: Session) -> str:
+        # Catalog data is delivered immediately, so capture the charge now.
+        intent = stripe.PaymentIntent.create(
+            amount=int((float(purchase.amount or 0)) * 100),
+            currency="usd",
+            capture_method="automatic",
+            metadata={"purchase_id": str(purchase.id), "listing_id": str(purchase.listing_id)},
+            idempotency_key=f"phold_{purchase.id}",
+        )
+        append_ledger(db, None, "hold", purchase.amount or 0.0, intent.id, purchase_id=purchase.id)
+        return intent.id
+
+    def release_purchase(self, purchase, supplier, db: Session) -> str:
+        if not supplier or not supplier.stripe_account_id:
+            raise ValueError("Supplier has no connected Stripe account — cannot release funds")
+        transfer = stripe.Transfer.create(
+            amount=int((float(purchase.amount or 0)) * 100),
+            currency="usd",
+            destination=supplier.stripe_account_id,
+            metadata={"purchase_id": str(purchase.id)},
+            idempotency_key=f"prelease_{purchase.id}",
+        )
+        append_ledger(db, None, "release", purchase.amount or 0.0, transfer.id, purchase_id=purchase.id)
+        return transfer.id
 
 
 # ---------------------------------------------------------------------------
