@@ -63,6 +63,8 @@ def _serialize_submission(s: Submission) -> dict:
         "content_link": s.content_link,
         "dataset_hash": s.dataset_hash,
         "quality_score": s.quality_score,
+        "quarantined": s.quarantined,
+        "pii_report": s.pii_report,
         "validation_report": s.validation_report,
         "created_at": s.created_at.isoformat() if s.created_at else None,
         "accepted_at": s.accepted_at.isoformat() if s.accepted_at else None,
@@ -148,6 +150,10 @@ async def create_submission(
         owner_signature=warranty_sig,
         key_hashes=result.key_hashes or None,
         quality_score=result.quality_score,
+        pii_report=result.pii_report or None,
+        # Auto-quarantine high-risk PII (payment cards / national IDs / pervasive
+        # contact data) so it can't be delivered before a human reviews it (S4).
+        quarantined=(result.pii_report or {}).get("risk") == "high",
     )
     db.add(submission)
     db.flush()
@@ -670,6 +676,13 @@ def download(
 
     if not submission.storage_location:
         raise HTTPException(status_code=404, detail="No file on record for this submission")
+
+    # Quarantine gate (S4): a flagged / high-PII dataset is not deliverable until reviewed.
+    if submission.quarantined:
+        raise HTTPException(
+            status_code=403,
+            detail="This dataset is under review and is temporarily unavailable for download.",
+        )
 
     # Honour takedown: if access_expiry is in the past (set by takedown), deny
     if submission.access_expiry and submission.access_expiry < datetime.utcnow():

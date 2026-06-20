@@ -17,6 +17,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from app.pii import scan_pii_rows
+
 SAMPLE_ROWS = 5
 
 TYPE_PARSERS: dict[str, Any] = {
@@ -38,6 +40,7 @@ class ValidationResult:
     sample: list[dict]
     key_hashes: list[str] = field(default_factory=list)  # per-record SHA-256 for dedup (populated when spec has unique_key)
     quality_score: float = 0.0  # 0..1 composite (conformance × completeness × uniqueness)
+    pii_report: dict = field(default_factory=dict)  # S4 PII scan result
 
 
 # Spreadsheet formula-injection triggers. We never mutate the stored/paid dataset,
@@ -194,6 +197,9 @@ def validate_dataset(
         4,
     )
 
+    # PII screen (S4): flag emails / phones / national IDs / payment cards.
+    pii_report = scan_pii_rows(conforming)
+
     report = {
         "total_rows": total_rows,
         "conforming_rows": validated_amount,
@@ -201,6 +207,7 @@ def validate_dataset(
         "duplicate_rows": dupe_count,
         "sample_rows": len(sample),
         "row_errors": row_errors,
+        "pii": pii_report,
         "stats": {
             "conformance_rate": round(conformance_rate, 4),
             "duplicate_density": round(duplicate_density, 4),
@@ -219,6 +226,7 @@ def validate_dataset(
         sample=sample,
         key_hashes=key_hashes,
         quality_score=quality_score,
+        pii_report=pii_report,
     )
 
 

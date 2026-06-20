@@ -149,6 +149,8 @@ class Submission(BaseModel):
     access_expiry = Column(DateTime)
     accepted_at = Column(DateTime, nullable=True)  # set when ACCEPTED; starts the review window
     key_hashes = Column(JSON, nullable=True)        # per-record SHA-256 hashes for cross-provider dedup (F3)
+    quarantined = Column(Boolean, default=False)    # blocks delivery pending review (S4: PII / report)
+    pii_report = Column(JSON, nullable=True)        # ingest PII scan result (S4)
     __table_args__ = (
         Index("idx_submission_request_status", "request_id", "status"),
         Index("idx_submission_active_records", "is_deleted", "status"),
