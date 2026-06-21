@@ -4,14 +4,17 @@
 # business plan underwrites: fill rate, GMV, platform take, cross-mode fulfilment,
 # repeat-buyer rate — overall and per vertical (DataRequest.category).
 
+import os
 from decimal import Decimal
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import (
-    DataRequest, Submission, Purchase, UserAuth as User, UserRole, RequestStatus, AuditLog,
+    DataRequest, Submission, Purchase, UserAuth as User, UserRole, RequestStatus,
+    AuditLog, Dispute,
 )
 from app.auth import get_current_user
 
@@ -198,6 +201,71 @@ def audit_log(
         "meta": r.meta,
         "created_at": r.created_at.isoformat() if r.created_at else None,
     } for r in rows]
+
+
+@router.get("/anomalies")
+def anomalies(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Internal anomaly flags (S5/S6) derived from existing data + the audit log:
+    submission velocity bursts, account-creation velocity, dispute rate, locked
+    accounts (auth-probe signal), shared-IP actor clusters (sybil/collusion), and
+    recent payout-account changes. Surfaces what to investigate, not a verdict.
+    """
+    _admin_only(current_user)
+    now = datetime.utcnow()
+    day_ago = now - timedelta(hours=24)
+    week_ago = now - timedelta(days=7)
+    vel_threshold = int(os.getenv("ANOMALY_SUBMISSION_VELOCITY", "20"))
+
+    # Submission velocity per provider in the last 24h.
+    recent_subs = db.query(Submission).filter(
+        Submission.created_at >= day_ago, Submission.is_deleted == False
+    ).all()
+    per_provider: dict[str, int] = {}
+    for s in recent_subs:
+        per_provider[str(s.provider_id)] = per_provider.get(str(s.provider_id), 0) + 1
+    velocity = [{"provider_id": p, "submissions_24h": n}
+                for p, n in per_provider.items() if n >= vel_threshold]
+
+    new_accounts_24h = db.query(User).filter(
+        User.created_at >= day_ago, User.is_deleted == False
+    ).count()
+
+    # Dispute rate (open disputes vs paid submissions).
+    open_disputes = db.query(Dispute).filter(Dispute.status == "open", Dispute.is_deleted == False).count()
+    paid = db.query(Submission).filter(Submission.status == "paid", Submission.is_deleted == False).count()
+    dispute_rate = round(open_disputes / paid, 4) if paid else 0.0
+
+    # Auth-probe signal: locked or high-failed-attempt accounts.
+    locked = db.query(User).filter(
+        (User.account_locked == True) | (User.failed_login_attempts >= 5)  # noqa: E712
+    ).count()
+
+    # Sybil/collusion: IPs in the audit log used by >1 distinct actor.
+    shared_ip: dict[str, set] = {}
+    for a in db.query(AuditLog).filter(AuditLog.ip.isnot(None), AuditLog.actor_id.isnot(None)).all():
+        shared_ip.setdefault(a.ip, set()).add(a.actor_id)
+    shared_ip_clusters = [{"ip": ip, "actors": len(actors)} for ip, actors in shared_ip.items() if len(actors) > 1]
+
+    recent_payout_changes = [{
+        "actor_id": a.actor_id, "ip": a.ip,
+        "created_at": a.created_at.isoformat() if a.created_at else None, "meta": a.meta,
+    } for a in db.query(AuditLog).filter(
+        AuditLog.action == "payout_change", AuditLog.created_at >= week_ago
+    ).order_by(AuditLog.created_at.desc()).all()]
+
+    return {
+        "submission_velocity": velocity,
+        "new_accounts_24h": new_accounts_24h,
+        "dispute_rate": dispute_rate,
+        "open_disputes": open_disputes,
+        "locked_accounts": locked,
+        "shared_ip_clusters": shared_ip_clusters,
+        "recent_payout_changes": recent_payout_changes,
+    }
 
 
 @router.get("/leakage")
