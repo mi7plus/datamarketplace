@@ -1,17 +1,31 @@
 # app/requests.py
+import os
+import csv
+import io
+import hashlib
+from datetime import datetime, timedelta
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
-from typing import List
-from datetime import datetime
 
 from app.db import get_db
-from app.models import DataRequest, UserAuth as User, UserRole, PricingMode, RequestStatus, Ledger
+from app.models import (
+    DataRequest, UserAuth as User, UserRole, PricingMode, RequestStatus, Ledger,
+    Listing, ListingStatus, Submission, AcceptedKey,
+)
 from app.schemas import DataRequestCreateSchema, DataRequestResponseSchema
 from app.auth import get_current_user
-from app.lifecycle import open_request, expire_request
+from app.lifecycle import open_request, expire_request, validate_submission, accept_submission, mark_paid
 from app.payments import get_payment_provider, ledger_balance
+from app.storage import get_storage
+from app.ingest import _parse_csv, _parse_jsonl
 
 router = APIRouter()
+
+PAYOUT_COOLDOWN_HOURS = int(os.getenv("PAYOUT_COOLDOWN_HOURS", "24"))
 
 
 @router.post("/", response_model=DataRequestResponseSchema)
@@ -85,6 +99,150 @@ def fund_request(
     request = open_request(request, db)
     db.commit()
     return request
+
+
+class FulfilFromListing(BaseModel):
+    listing_id: str
+    quantity: Optional[int] = None     # max records to pull; default = as much as fits
+
+
+@router.post("/{request_id}/fulfil-from-listing")
+def fulfil_from_listing(
+    request_id: str,
+    body: FulfilFromListing,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Cross-mode fulfilment (the headline): fill part of an open request from a
+    catalog listing. The listing's records are entity-resolved on the REQUEST's
+    declared unique key, deduped against everything already accepted for the
+    request (any source), capped at remaining demand, and settled per record
+    through the request's single escrow. No record is paid for twice.
+    """
+    # --- locks: request first, then listing (consistent order) ---
+    request = (
+        db.execute(select(DataRequest).where(DataRequest.id == request_id).with_for_update())
+        .scalars().first()
+    )
+    if not request or request.is_deleted:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if str(request.requester_id) != str(current_user.id):
+        raise HTTPException(status_code=404, detail="Request not found")   # don't leak (S1)
+    if request.status not in (RequestStatus.OPEN, RequestStatus.PARTIALLY_FULFILLED):
+        raise HTTPException(status_code=409, detail=f"Request is not open for fulfilment (status: {request.status})")
+
+    unique_key = (request.spec or {}).get("unique_key") or []
+    if not unique_key:
+        raise HTTPException(status_code=409,
+                            detail="Cross-source fulfilment requires the request to declare a unique_key")
+
+    listing = (
+        db.execute(select(Listing).where(Listing.id == body.listing_id).with_for_update())
+        .scalars().first()
+    )
+    if not listing or listing.is_deleted:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    if listing.quarantined or listing.status != ListingStatus.ACTIVE or (listing.available_quantity or 0) <= 0:
+        raise HTTPException(status_code=409, detail="Listing is not available")
+
+    remaining = (request.amount_required or 0) - (request.accepted_total or 0)
+    if remaining <= 0:
+        raise HTTPException(status_code=409, detail="Request is already filled")
+
+    # Payout safety in real-money mode (mirrors purchase): supplier must be payable.
+    payment = get_payment_provider()
+    supplier = db.query(User).filter(User.id == str(listing.supplier_id)).first()
+    if payment.requires_connected_account:
+        if not supplier or not supplier.stripe_account_id:
+            raise HTTPException(status_code=409, detail="This supplier cannot receive payouts yet.")
+        if supplier.payout_account_changed_at and \
+           datetime.utcnow() < supplier.payout_account_changed_at + timedelta(hours=PAYOUT_COOLDOWN_HOURS):
+            raise HTTPException(status_code=409, detail="Supplier payout account changed recently — temporarily unavailable.")
+
+    # Entity-resolve listing rows on the REQUEST's key; dedup vs accepted + within-batch.
+    raw = get_storage().read(listing.storage_location)
+    rows = _parse_jsonl(raw) if (listing.required_format == "jsonl") else _parse_csv(raw)
+    already = {r.key_hash for r in db.query(AcceptedKey).filter(AcceptedKey.request_id == str(request.id)).all()}
+
+    cap = min(remaining, listing.available_quantity)
+    if body.quantity is not None:
+        cap = min(cap, max(0, body.quantity))
+
+    creditable_rows: list[dict] = []
+    creditable_hashes: list[str] = []
+    seen: set = set()
+    for row in rows:
+        if len(creditable_rows) >= cap:
+            break
+        kv = tuple(str(row.get(k, "")) for k in unique_key)
+        kh = hashlib.sha256(repr(kv).encode()).hexdigest()
+        if kh in already or kh in seen:
+            continue
+        seen.add(kh)
+        creditable_rows.append(row)
+        creditable_hashes.append(kh)
+
+    accepted = len(creditable_rows)
+    if accepted == 0:
+        raise HTTPException(status_code=409, detail="Listing contributes no new records to this request")
+
+    # Slice the credited rows into the buyer's deliverable.
+    fieldnames = list(creditable_rows[0].keys())
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=fieldnames)
+    w.writeheader()
+    for r in creditable_rows:
+        w.writerow(r)
+    file_bytes = buf.getvalue().encode()
+
+    submission = Submission(
+        request_id=request.id,
+        provider_id=listing.supplier_id,
+        content_link=f"catalog-{listing.id}.csv",
+        offered_amount=accepted,
+        accepted_amount=0,
+        file_size_bytes=len(file_bytes),
+        mime_type="text/csv",
+        storage_location=get_storage().save(f"catalog-fills/{request.id}/{listing.id}.csv", file_bytes),
+        dataset_hash=hashlib.sha256(file_bytes).hexdigest(),
+        key_hashes=creditable_hashes,
+        quality_score=listing.quality_score or 1.0,
+        owner_signature=f"catalog fill from listing {listing.id}",
+        source="catalog",
+    )
+    db.add(submission)
+    db.flush()
+    validate_submission(
+        submission, accepted,
+        {"conforming_rows": accepted, "sample": (listing.sample or [])[:5],
+         "unique_key": unique_key, "source": "catalog", "listing_id": str(listing.id)},
+        db,
+    )
+
+    # Reuse the engine: caps at remaining, writes AcceptedKeys, bumps accepted_total,
+    # advances request status — all in one locked transaction.
+    submission, request = accept_submission(submission, request, db)
+
+    # Catalog data already exists → settle immediately (no acceptance window).
+    if submission.status in ("accepted", "partially_accepted"):
+        payment.release_to_provider(submission, db)
+        submission = mark_paid(submission, db)
+
+    listing.available_quantity = max(0, (listing.available_quantity or 0) - submission.accepted_amount)
+    if listing.available_quantity == 0:
+        listing.status = ListingStatus.SOLD_OUT
+    db.commit()
+
+    return {
+        "submission_id": str(submission.id),
+        "source": "catalog",
+        "accepted_amount": submission.accepted_amount,
+        "amount_due": str(submission.amount_due),
+        "request_status": request.status,
+        "request_accepted_total": request.accepted_total,
+        "request_remaining": (request.amount_required or 0) - (request.accepted_total or 0),
+    }
 
 
 @router.post("/{request_id}/close", response_model=DataRequestResponseSchema)
