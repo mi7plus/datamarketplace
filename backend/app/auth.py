@@ -262,3 +262,53 @@ def change_password(
     db.commit()
     response.delete_cookie("refresh_token")
     return {"msg": "Password changed — all sessions signed out"}
+
+
+# -----------------------------
+# MFA (TOTP) — S3 HARDEN
+# -----------------------------
+
+import pyotp
+
+
+class MFACode(_PydanticModel):
+    code: str
+
+
+def verify_totp(user: User, code: str | None) -> bool:
+    """True if `code` is a valid current TOTP for the user (and MFA is set up)."""
+    if not user.mfa_secret or not code:
+        return False
+    return pyotp.TOTP(user.mfa_secret).verify(code, valid_window=1)
+
+
+@router.post("/mfa/enroll")
+def mfa_enroll(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Begin TOTP enrolment: issue a secret + provisioning URI. Not active until verified."""
+    secret = pyotp.random_base32()
+    current_user.mfa_secret = secret
+    current_user.mfa_enabled = False
+    db.commit()
+    uri = pyotp.TOTP(secret).provisioning_uri(name=current_user.email, issuer_name="Rowbound")
+    return {"secret": secret, "otpauth_uri": uri}
+
+
+@router.post("/mfa/verify")
+def mfa_verify(data: MFACode, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Confirm a code to activate MFA."""
+    if not verify_totp(current_user, data.code):
+        raise HTTPException(status_code=400, detail="Invalid MFA code")
+    current_user.mfa_enabled = True
+    db.commit()
+    return {"mfa_enabled": True}
+
+
+@router.post("/mfa/disable")
+def mfa_disable(data: MFACode, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Disable MFA (requires a valid current code)."""
+    if not verify_totp(current_user, data.code):
+        raise HTTPException(status_code=400, detail="Invalid MFA code")
+    current_user.mfa_secret = None
+    current_user.mfa_enabled = False
+    db.commit()
+    return {"mfa_enabled": False}

@@ -76,12 +76,20 @@ def get_profile(
 @router.get("/stripe-connect")
 def stripe_connect_link(
     request: Request,
+    mfa_code: str = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Return a Stripe Connect onboarding URL so the provider can receive payouts."""
     if current_user.role != UserRole.PROVIDER:
         raise HTTPException(status_code=403, detail="Only providers use Stripe Connect")
+
+    # Step-up auth (S3 HARDEN): changing payout details is the top ATO target, so if
+    # the provider has MFA enabled, require a fresh TOTP code on this surface.
+    if current_user.mfa_enabled:
+        from app.auth import verify_totp
+        if not verify_totp(current_user, mfa_code):
+            raise HTTPException(status_code=401, detail="A valid MFA code is required to manage payout details")
 
     frontend = os.getenv("FRONTEND_URL", "http://localhost:3000")
     return_url = f"{frontend}/profile?stripe=success"

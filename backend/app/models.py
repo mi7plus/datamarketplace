@@ -73,6 +73,8 @@ class UserAuth(BaseModel):
     account_locked = Column(Boolean, default=False)
     failed_login_attempts = Column(Integer, default=0)
     locked_until = Column(DateTime, nullable=True)   # time-based lockout window (S3)
+    mfa_secret = Column(String, nullable=True)        # TOTP secret (S3 HARDEN)
+    mfa_enabled = Column(Boolean, default=False)      # MFA active once enrolled + verified
     last_login_at = Column(DateTime)
     # Stripe Connect account id for providers receiving payouts
     stripe_account_id = Column(String, nullable=True)
