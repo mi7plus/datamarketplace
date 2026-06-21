@@ -18,8 +18,11 @@ onMounted(async () => {
     }
 })
 
+const manifests = ref<Record<string, any>>({})
+
 async function download(id: string) {
     const res = await api.get(`/purchases/${id}/download`)
+    if (res?.manifest) manifests.value[id] = res.manifest
     if (res?.url) window.open(res.url, '_blank')
 }
 </script>
@@ -41,10 +44,16 @@ async function download(id: string) {
                         {{ p.created_at ? new Date(p.created_at).toLocaleString() : '' }} · {{ p.status }}
                     </div>
                 </div>
-                <button v-if="p.status === 'paid'" @click="download(p.id)"
-                    class="bg-ink text-white px-4 py-2 rounded-lg text-sm hover:bg-ink/90">
-                    Download
-                </button>
+                <div class="flex flex-col items-end gap-1">
+                    <button v-if="p.status === 'paid'" @click="download(p.id)"
+                        class="bg-ink text-white px-4 py-2 rounded-lg text-sm hover:bg-ink/90">
+                        Download
+                    </button>
+                    <div v-if="manifests[p.id]" class="text-xs text-surface-label text-right">
+                        <span v-if="manifests[p.id].license">{{ manifests[p.id].license.name }} · </span>
+                        <span>source: {{ manifests[p.id].source }}</span>
+                    </div>
+                </div>
             </div>
         </div>
     </PageWrapper>

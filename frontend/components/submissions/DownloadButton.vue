@@ -1,28 +1,20 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useAuthStore } from '~/stores/auth'
-import { useRuntimeConfig } from '#app'
+import { useApi } from '~/composables/useApi'
 
 const props = defineProps<{ submissionId: string }>()
-
-const auth = useAuthStore()
-const config = useRuntimeConfig()
+const api = useApi()
 
 const loading = ref(false)
 const error = ref<string | null>(null)
+const manifest = ref<any>(null)
 
 async function download() {
     loading.value = true
     error.value = null
     try {
-        const res = await fetch(
-            `${config.public.apiBase}/submissions/${props.submissionId}/download`,
-            { headers: { Authorization: `Bearer ${auth.token}` } }
-        )
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.detail || 'Download failed')
-
-        // Open the pre-signed URL in a new tab
+        const data = await api.get(`/submissions/${props.submissionId}/download`)
+        manifest.value = data.manifest ?? null
         window.open(data.url, '_blank', 'noopener')
     } catch (e: any) {
         error.value = e.message
@@ -37,10 +29,25 @@ async function download() {
         <button
             @click="download"
             :disabled="loading"
-            class="px-3 py-1 rounded bg-emerald-600 text-white text-xs
-                   hover:bg-emerald-700 disabled:opacity-50">
+            class="px-3 py-1 rounded bg-accent-deep text-white text-xs
+                   hover:bg-accent disabled:opacity-50">
             {{ loading ? 'Generating link…' : 'Download dataset' }}
         </button>
         <p v-if="error" class="text-red-500 text-xs mt-1">{{ error }}</p>
+
+        <!-- Compliance manifest travels with the delivery (Phase 8) -->
+        <div v-if="manifest" class="mt-2 text-xs text-muted border border-surface-border rounded p-2 space-y-0.5">
+            <div><span class="text-surface-label">Source:</span> {{ manifest.source }}</div>
+            <div v-if="manifest.license">
+                <span class="text-surface-label">License:</span> {{ manifest.license.name }}
+            </div>
+            <div v-if="manifest.consent">
+                <span class="text-surface-label">Consent:</span>
+                {{ manifest.consent.with_consent_basis }}/{{ manifest.record_count }} with basis
+            </div>
+            <div v-if="manifest.provenance" class="truncate">
+                <span class="text-surface-label">Provenance:</span> {{ manifest.provenance }}
+            </div>
+        </div>
     </div>
 </template>
