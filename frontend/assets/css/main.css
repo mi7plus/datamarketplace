@@ -1,11 +1,52 @@
-.input {
-    @apply w-full border rounded p-2;
-}
+/* Rowbound design system — single-sourced tokens + base typography.
+   Serif (Georgia) for display/brand moments; system sans for all UI/body. */
 
-a {
-    @apply transition-colors duration-150;
+:root {
+    --rb-ink: #0F1E3D;
+    --rb-accent: #2DD4BF;
+    --rb-accent-deep: #14B8A6;
+    --rb-muted: #64748B;
+    --rb-bg: #F8FAFC;
+    --rb-card: #FFFFFF;
+    --rb-border: #E2E8F0;
+    --rb-label: #94A3B8;
 }
 
 html, body, #__nuxt, #__layout {
     height: 100%;
+}
+
+body {
+    background: var(--rb-bg);
+    color: var(--rb-ink);
+    /* System sans for UI/body — fast, private, no external request. */
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+/* Visible, consistent focus ring for keyboard users (a11y). */
+:focus-visible {
+    outline: 2px solid var(--rb-accent-deep);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+a {
+    transition: color 150ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Legacy helper kept for existing markup. */
+.input {
+    @apply w-full border border-surface-border rounded p-2;
 }

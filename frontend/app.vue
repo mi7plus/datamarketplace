@@ -14,5 +14,8 @@
 
     <!-- Footer -->
     <AppFooter />
+
+    <!-- Global toast host -->
+    <UiToaster />
   </div>
 </template>
