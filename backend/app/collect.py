@@ -274,6 +274,7 @@ def finalize_dispatch(
         key_hashes=key_hashes or None,
         quality_score=1.0,   # per-entry QA already enforced field/geo/photo/consent gates
         owner_signature=f"collected via dispatch {dispatch.id} by {current_user.email} at {datetime.utcnow().isoformat()}Z",
+        source="collect",
     )
     db.add(submission)
     db.flush()

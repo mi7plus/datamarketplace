@@ -66,6 +66,7 @@ def _serialize_submission(s: Submission) -> dict:
         "quality_score": s.quality_score,
         "quarantined": s.quarantined,
         "pii_report": s.pii_report,
+        "source": s.source,
         "validation_report": s.validation_report,
         "created_at": s.created_at.isoformat() if s.created_at else None,
         "accepted_at": s.accepted_at.isoformat() if s.accepted_at else None,
@@ -155,6 +156,7 @@ async def create_submission(
         # Auto-quarantine high-risk PII (payment cards / national IDs / pervasive
         # contact data) so it can't be delivered before a human reviews it (S4).
         quarantined=(result.pii_report or {}).get("risk") == "high",
+        source="request",
     )
     db.add(submission)
     db.flush()

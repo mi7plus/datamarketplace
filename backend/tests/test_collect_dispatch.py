@@ -138,6 +138,8 @@ def test_finalize_compiles_dedups_and_settles():
         # Buyer sees it in their review list and accepts → settles through the engine
         subs = client.get(f"/submissions/request/{rid}", headers=R).json()
         assert any(s["id"] == sub_id for s in subs)
+        # Provenance: this fill is tagged as collected (Phase 6 cross-source legibility)
+        assert next(s for s in subs if s["id"] == sub_id)["source"] == "collect"
         acc = client.post(f"/submissions/{sub_id}/accept", headers=R)
         assert acc.status_code == 200, acc.text
         assert acc.json()["submission"]["accepted_amount"] == 2
