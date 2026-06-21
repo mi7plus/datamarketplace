@@ -9,9 +9,13 @@
 
 import io
 import csv
+import json
 import uuid
 import pytest
 from datetime import datetime, timedelta
+
+_SPEC = {"columns": [{"name": "id", "type": "integer", "required": True},
+                     {"name": "value", "type": "string", "required": True}], "unique_key": ["id"]}
 
 from fastapi.testclient import TestClient
 from sqlalchemy import text
@@ -63,6 +67,8 @@ def test_user_b_cannot_touch_user_a_objects():
     db = SessionLocal()
     rid = None
     sub_ids = []
+    listing_id = None
+    purchase_id = None
     try:
         # A creates + funds a request
         rid = client.post("/requests/", headers=A, json={
@@ -87,6 +93,14 @@ def test_user_b_cannot_touch_user_a_objects():
         sub_ids = [s1, s2]
         assert client.post(f"/submissions/{s1}/accept", headers=A).status_code == 200
 
+        # P_A lists a catalog dataset; A buys part of it (a purchase owned by A).
+        listing_id = client.post("/listings/", headers=PA,
+            files={"file": ("L.csv", _csv(range(1, 9)), "text/csv")},
+            data={"title": "anchor", "price_per_unit": 1.0, "unit": "row",
+                  "spec": json.dumps(_SPEC), "warranted": "true"}).json()["id"]
+        purchase_id = client.post(f"/listings/{listing_id}/purchase", headers=A,
+            json={"quantity": 2}).json()["purchase"]["id"]
+
         # ---- B (requester, not the owner) is refused on every object action: 404 ----
         assert client.post(f"/requests/{rid}/fund", headers=B).status_code == 404
         assert client.post(f"/requests/{rid}/close", headers=B).status_code == 404
@@ -102,6 +116,18 @@ def test_user_b_cannot_touch_user_a_objects():
         # ---- P_B (provider, not THIS submission's provider) refused: 404 ----
         assert client.post(f"/submissions/{s1}/claim", headers=PB).status_code == 404
         assert client.get(f"/submissions/{s1}/sample", headers=PB).status_code == 404
+
+        # ---- B refused on the post-Phase-4 money/file objects too ----
+        # catalog purchase (owned by A): delivery + manifest are buyer-scoped
+        assert client.get(f"/purchases/{purchase_id}/download", headers=B).status_code == 404
+        assert client.get(f"/purchases/{purchase_id}/manifest", headers=B).status_code == 404
+        # cross-mode fulfilment + match discovery on A's request
+        assert client.post(f"/requests/{rid}/fulfil-from-listing", headers=B,
+                           json={"listing_id": listing_id}).status_code == 404
+        assert client.get(f"/requests/{rid}/matching-listings", headers=B).status_code == 404
+        # the delivery manifest is party-scoped (B is neither buyer nor provider)
+        assert client.get(f"/submissions/{s1}/manifest", headers=B).status_code == 404
+        assert client.get(f"/submissions/{s1}/manifest", headers=PB).status_code == 404
 
         # ---- Role gates (403 — role denial doesn't leak a specific object) ----
         # A requester cannot upload a submission
@@ -120,12 +146,21 @@ def test_user_b_cannot_touch_user_a_objects():
         # The owner A CAN see the ledger and sample (positive control — not over-locked)
         assert client.get(f"/requests/{rid}/ledger", headers=A).status_code == 200
         assert client.get(f"/submissions/{s1}/sample", headers=A).status_code == 200
+        # A owns the purchase + the submission manifest (positive controls)
+        assert client.get(f"/purchases/{purchase_id}/download", headers=A).status_code == 200
+        assert client.get(f"/submissions/{s1}/manifest", headers=A).status_code == 200
 
     finally:
         uids = [str(_uid(db, e)) for e in emails.values()]
         db.execute(text("DELETE FROM reviews WHERE request_id = :rid"), {"rid": rid})
         db.execute(text("DELETE FROM disputes WHERE submission_id::text = ANY(:s)"), {"s": sub_ids})
         db.execute(text("DELETE FROM accepted_keys WHERE request_id = :rid"), {"rid": rid})
+        if purchase_id:
+            db.execute(text("DELETE FROM ledger WHERE purchase_id::text = :p"), {"p": purchase_id})
+            db.execute(text("DELETE FROM purchases WHERE id::text = :p"), {"p": purchase_id})
+        if listing_id:
+            db.execute(text("DELETE FROM purchases WHERE listing_id::text = :l"), {"l": listing_id})
+            db.execute(text("DELETE FROM listings WHERE id::text = :l"), {"l": listing_id})
         db.execute(text("DELETE FROM ledger WHERE request_id = :rid"), {"rid": rid})
         db.execute(text("DELETE FROM submissions WHERE request_id = :rid"), {"rid": rid})
         db.execute(text("DELETE FROM data_requests WHERE id = :rid"), {"rid": rid})

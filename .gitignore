@@ -26,3 +26,6 @@ frontend/dist/
 .DS_Store
 Thumbs.db
 /backend/uploads/
+
+# @nuxt/content local store
+frontend/.data/
