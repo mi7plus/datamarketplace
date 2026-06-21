@@ -361,6 +361,19 @@ class Ledger(BaseModel):
     )
 
 
+class ContactMessage(Base):
+    """Inbound contact-form submission, routed by reason (U2)."""
+    __tablename__ = "contact_messages"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    org = Column(String, nullable=True)
+    reason = Column(String, nullable=False)        # buyer | supplier | press | support
+    message = Column(Text, nullable=False)
+    ip = Column(String, nullable=True)
+
+
 class AuditLog(Base):
     """Append-only audit trail of money/file events (S6): who did what to which
     object, when, from where. Written, never updated or deleted."""

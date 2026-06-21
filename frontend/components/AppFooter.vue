@@ -15,9 +15,10 @@
       <!-- Right / Links -->
       <div class="flex gap-6">
         <NuxtLink to="/about" class="hover:text-accent transition-colors">About</NuxtLink>
+        <NuxtLink to="/guides" class="hover:text-accent transition-colors">Guides</NuxtLink>
         <NuxtLink to="/terms" class="hover:text-accent transition-colors">Terms</NuxtLink>
         <NuxtLink to="/privacy" class="hover:text-accent transition-colors">Privacy</NuxtLink>
-        <a href="mailto:contact@rowbound.io" class="hover:text-accent transition-colors">Contact</a>
+        <NuxtLink to="/contact" class="hover:text-accent transition-colors">Contact</NuxtLink>
       </div>
 
     </div>
