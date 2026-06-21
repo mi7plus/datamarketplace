@@ -22,6 +22,7 @@ from app.lifecycle import open_request, expire_request, validate_submission, acc
 from app.payments import get_payment_provider, ledger_balance
 from app.storage import get_storage
 from app.ingest import _parse_csv, _parse_jsonl
+from app.keys import key_hash
 
 router = APIRouter()
 
@@ -208,8 +209,7 @@ def fulfil_from_listing(
     for row in rows:
         if len(creditable_rows) >= cap:
             break
-        kv = tuple(str(row.get(k, "")) for k in unique_key)
-        kh = hashlib.sha256(repr(kv).encode()).hexdigest()
+        kh = key_hash(row, unique_key)        # normalized — resolves across sources (S5)
         if kh in already or kh in seen:
             continue
         seen.add(kh)

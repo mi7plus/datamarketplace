@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from app.pii import scan_pii_rows
+from app.keys import normalized_key, key_hash
 
 SAMPLE_ROWS = 5
 
@@ -152,9 +153,9 @@ def validate_dataset(
                 row_errors.append({"row": i + 1, "errors": errors})
             continue
 
-        # Key uniqueness check within this submission
+        # Key uniqueness check within this submission (normalized — S5).
         if unique_key:
-            key_val = tuple(str(parsed.get(k, "")) for k in unique_key)
+            key_val = normalized_key(parsed, unique_key)
             if key_val in seen_keys:
                 dupe_count += 1
                 continue
@@ -166,13 +167,11 @@ def validate_dataset(
     # Neutralize formula triggers in the PREVIEW only (the paid dataset is untouched).
     sample = _neutralize_sample(conforming[:SAMPLE_ROWS])
 
-    # Build per-record key hashes for cross-provider dedup (F3).
-    # Each hash is SHA-256 of the canonical key-tuple string for that record.
+    # Build per-record key hashes for cross-source dedup (F3) — normalized (S5).
     key_hashes: list[str] = []
     if unique_key:
         for parsed_row in conforming:
-            key_val = tuple(str(parsed_row.get(k, "")) for k in unique_key)
-            key_hashes.append(hashlib.sha256(repr(key_val).encode()).hexdigest())
+            key_hashes.append(key_hash(parsed_row, unique_key))
 
     # ---- Statistical / consistency signals → quality_score (S2) ----
     # conformance: how much of the upload was usable; duplicate_density: within-

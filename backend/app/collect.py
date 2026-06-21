@@ -23,6 +23,7 @@ from app.models import (
 )
 from app.auth import get_current_user
 from app.ingest import _parse_value, _neutralize_sample, scan_pii_rows, SAMPLE_ROWS
+from app.keys import normalized_key, key_hash
 from app.lifecycle import validate_submission
 from app.storage import get_storage
 
@@ -218,12 +219,12 @@ def finalize_dispatch(
     if not entries:
         raise HTTPException(status_code=409, detail="No valid entries to finalize")
 
-    # Dedup within the dispatch by the declared key (cross-source dedup happens at accept).
+    # Dedup within the dispatch by the declared key, normalized (S5).
     seen: set = set()
     deduped: list[CollectionEntry] = []
     for e in entries:
         if unique_key:
-            kv = tuple(str((e.data or {}).get(k, "")) for k in unique_key)
+            kv = normalized_key(e.data or {}, unique_key)
             if kv in seen:
                 continue
             seen.add(kv)
@@ -241,8 +242,7 @@ def finalize_dispatch(
     key_hashes = []
     if unique_key:
         for e in deduped:
-            kv = tuple(str((e.data or {}).get(k, "")) for k in unique_key)
-            key_hashes.append(hashlib.sha256(repr(kv).encode()).hexdigest())
+            key_hashes.append(key_hash(e.data or {}, unique_key))
 
     sample = _neutralize_sample([
         {f: (e.data or {}).get(f) for f in field_names} for e in deduped[:SAMPLE_ROWS]
