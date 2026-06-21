@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import (
-    DataRequest, Submission, Purchase, UserAuth as User, UserRole, RequestStatus,
+    DataRequest, Submission, Purchase, UserAuth as User, UserRole, RequestStatus, AuditLog,
 )
 from app.auth import get_current_user
 
@@ -170,6 +170,34 @@ def seed_catalog(
     from app.seed_listings import seed
     created = seed(supplier_email)
     return {"seeded": created, "supplier_email": supplier_email}
+
+
+@router.get("/audit")
+def audit_log(
+    action: str = Query(None),
+    object_id: str = Query(None),
+    limit: int = Query(100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The append-only audit trail (admin) — money/file events, newest first."""
+    _admin_only(current_user)
+    q = db.query(AuditLog)
+    if action:
+        q = q.filter(AuditLog.action == action)
+    if object_id:
+        q = q.filter(AuditLog.object_id == object_id)
+    rows = q.order_by(AuditLog.created_at.desc()).limit(min(limit, 500)).all()
+    return [{
+        "id": str(r.id),
+        "action": r.action,
+        "actor_id": str(r.actor_id) if r.actor_id else None,
+        "ip": r.ip,
+        "object_type": r.object_type,
+        "object_id": r.object_id,
+        "meta": r.meta,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    } for r in rows]
 
 
 @router.get("/leakage")

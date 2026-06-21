@@ -100,6 +100,9 @@ def stripe_connect_link(
         # and send an out-of-band notice so the real owner can react.
         current_user.stripe_account_id = acct_id
         current_user.payout_account_changed_at = datetime.utcnow()
+        from app import audit
+        audit.record(db, "payout_change", actor_id=current_user.id, ip=audit.client_ip(request),
+                     object_type="user", object_id=current_user.id, meta={"new_account": acct_id})
         db.commit()
         notify(
             current_user,

@@ -3,7 +3,8 @@ import os
 import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
+from app import audit
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from uuid import UUID
@@ -650,6 +651,7 @@ def get_sample(
 @router.get("/{submission_id}/download")
 def download(
     submission_id: str,
+    request: Request = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -698,6 +700,9 @@ def download(
         raise HTTPException(status_code=410, detail="This dataset has been taken down and is no longer available")
 
     url = get_storage().presigned_url(submission.storage_location, filename=submission.content_link)
+
+    audit.record(db, "download", actor_id=current_user.id, ip=audit.client_ip(request),
+                 object_type="submission", object_id=submission.id)
 
     # Record download in access_expiry (best-effort — not blocking)
     try:
@@ -799,6 +804,8 @@ def takedown(
     submission.access_token_id = _uuid.uuid4().hex    # rotate → any outstanding token is dead
     submission.is_deleted = True                      # disappears from all queries
 
+    audit.record(db, "takedown", actor_id=current_user.id,
+                 object_type="submission", object_id=submission.id)
     db.commit()
     return {
         "submission_id": submission_id,

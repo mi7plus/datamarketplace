@@ -11,7 +11,8 @@ from decimal import Decimal
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Request
+from app import audit
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -183,6 +184,8 @@ def takedown_listing(
         raise HTTPException(status_code=404, detail="Listing not found")
     listing.status = ListingStatus.TAKEN_DOWN
     listing.quarantined = True          # download_purchase 410s on quarantined/taken-down listings
+    audit.record(db, "takedown", actor_id=current_user.id,
+                 object_type="listing", object_id=listing.id)
     db.commit()
     return {"listing_id": listing_id, "status": "taken_down"}
 
@@ -308,6 +311,9 @@ def purchase_listing(
     if listing.available_quantity <= 0:
         listing.status = ListingStatus.SOLD_OUT
 
+    audit.record(db, "purchase", actor_id=current_user.id,
+                 object_type="purchase", object_id=purchase.id,
+                 meta={"listing_id": str(listing.id), "quantity": qty, "amount": str(amount)})
     db.commit()
     db.refresh(purchase)
     bal = purchase_balance(db, purchase.id)

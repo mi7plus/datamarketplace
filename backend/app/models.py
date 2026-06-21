@@ -359,6 +359,24 @@ class Ledger(BaseModel):
     )
 
 
+class AuditLog(Base):
+    """Append-only audit trail of money/file events (S6): who did what to which
+    object, when, from where. Written, never updated or deleted."""
+    __tablename__ = "audit_log"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    actor_id = Column(UUID(as_uuid=True), nullable=True)
+    ip = Column(String, nullable=True)
+    action = Column(String, nullable=False)        # download | release | takedown | payout_change | purchase | fulfil ...
+    object_type = Column(String, nullable=True)    # submission | purchase | listing | request | user
+    object_id = Column(String, nullable=True)
+    meta = Column(JSON, nullable=True)
+    __table_args__ = (
+        Index("idx_audit_object", "object_type", "object_id"),
+        Index("idx_audit_action", "action"),
+    )
+
+
 class ProcessedStripeEvent(Base):
     """Dedup table for Stripe webhook events. Prevents double-processing on redelivery."""
     __tablename__ = "processed_stripe_events"
