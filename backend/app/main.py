@@ -10,6 +10,7 @@ from app.reviews import router as reviews_router
 from app.disputes import router as disputes_router
 from app.listings import router as listings_router, purchases_router
 from app.collect import router as collect_router
+from app.metrics import router as metrics_router
 from dotenv import load_dotenv
 from pathlib import Path
 import os
@@ -55,6 +56,7 @@ app.include_router(disputes_router, prefix="/disputes", tags=["disputes"])
 app.include_router(listings_router, prefix="/listings", tags=["listings"])
 app.include_router(purchases_router, prefix="/purchases", tags=["purchases"])
 app.include_router(collect_router, prefix="/collect", tags=["collect"])
+app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
 
 
 # Background auto-release sweep: pays out ACCEPTED submissions whose acceptance

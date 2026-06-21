@@ -54,6 +54,7 @@ def create_request(
         budget=data.budget,
         required_format=data.required_format,
         spec=data.spec.model_dump() if data.spec else None,
+        category=data.category,
         mode=data.mode,
         collection_spec=data.collection_spec.model_dump() if data.collection_spec else None,
         deadline=deadline,

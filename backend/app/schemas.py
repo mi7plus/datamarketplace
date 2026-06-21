@@ -112,6 +112,7 @@ class DataRequestCreateSchema(BaseModel):
     budget: Optional[float] = None      # derived for per_unit; required for fixed_bounty
     required_format: Literal["csv", "jsonl"] = "csv"
     spec: Optional[RequestSpec] = None
+    category: Optional[str] = None
     mode: Literal["request", "collect"] = "request"
     collection_spec: Optional[CollectionSpec] = None
     deadline: Optional[str] = None      # ISO datetime string; stored as DateTime
@@ -149,6 +150,7 @@ class DataRequestResponseSchema(BaseModel):
     budget: Optional[float] = None
     required_format: Optional[str] = None
     spec: Optional[dict] = None
+    category: Optional[str] = None
     mode: Optional[str] = "request"
     collection_spec: Optional[dict] = None
     deadline: Optional[str] = None

@@ -100,6 +100,7 @@ class DataRequest(BaseModel):
     unit = Column(String)                      # e.g. "row", "record", "image"
     deadline = Column(DateTime, nullable=True)
     spec = Column(JSON, nullable=True)         # structured schema (Phase 2)
+    category = Column(String, nullable=True)   # vertical/category for beachhead metrics (Phase 7)
     mode = Column(String, default="request")   # "request" (upload) | "collect" (field forms) — Phase 5
     collection_spec = Column(JSON, nullable=True)  # form fields + geo/photo/consent requirements (Collect mode)
     accepted_total = Column(Integer, default=0)  # running sum of accepted units
