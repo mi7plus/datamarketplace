@@ -331,4 +331,35 @@ def download_purchase(
 
     fname = f"{(listing.title if listing else 'dataset')}.{listing.required_format if listing else 'csv'}"
     url = get_storage().presigned_url(purchase.storage_location, filename=fname)
-    return {"url": url, "purchase_id": purchase_id, "quantity": purchase.quantity}
+    return {
+        "url": url, "purchase_id": purchase_id, "quantity": purchase.quantity,
+        "manifest": _purchase_manifest(purchase, listing),
+    }
+
+
+def _purchase_manifest(purchase: Purchase, listing: Listing) -> dict:
+    """Compliance manifest for a catalog purchase (Phase 8)."""
+    lic = listing.license if (listing and listing.license) else None
+    return {
+        "purchase_id": str(purchase.id),
+        "source": "catalog",
+        "license": ({"name": lic.name, "terms": lic.terms} if lic else None),
+        "provenance": listing.provenance if listing else None,
+        "consent": None,                              # catalog data is not field-collected here
+        "record_count": purchase.quantity,
+    }
+
+
+@purchases_router.get("/{purchase_id}/manifest")
+def purchase_manifest(
+    purchase_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    purchase = db.query(Purchase).filter(
+        Purchase.id == purchase_id, Purchase.is_deleted == False
+    ).first()
+    if not purchase or str(purchase.buyer_id) != str(current_user.id):
+        raise HTTPException(status_code=404, detail="Purchase not found")
+    listing = db.query(Listing).filter(Listing.id == str(purchase.listing_id)).first()
+    return _purchase_manifest(purchase, listing)

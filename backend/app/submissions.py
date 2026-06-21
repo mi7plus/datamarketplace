@@ -714,7 +714,46 @@ def download(
         "expires_in_seconds": int(os.getenv("PRESIGNED_URL_TTL_SECONDS", "3600")),
         "submission_id": str(submission.id),
         "filename": submission.content_link,
+        # Compliance manifest travels with every delivery (Phase 8).
+        "manifest": _compliance_manifest(submission, db),
     }
+
+
+# ---------------------------------------------------------------------------
+# Compliance manifest (Phase 8): source + license + provenance + consent basis
+# travel with every delivered dataset, across all three modes.
+# ---------------------------------------------------------------------------
+
+def _compliance_manifest(submission: Submission, db: Session) -> dict:
+    data_request = db.query(DataRequest).filter(DataRequest.id == str(submission.request_id)).first()
+    lic = data_request.license if (data_request and data_request.license) else None
+    consent = (submission.validation_report or {}).get("collection", {}).get("consent")
+    return {
+        "submission_id": str(submission.id),
+        "source": submission.source,                 # request | collect | catalog
+        "license": ({"name": lic.name, "terms": lic.terms} if lic else None),
+        "provenance": submission.owner_signature,
+        "consent": consent,                          # present for collected (personal/location) data
+        "dataset_hash": submission.dataset_hash,
+        "record_count": submission.accepted_amount or submission.validated_amount,
+        "category": data_request.category if data_request else None,
+    }
+
+
+@router.get("/{submission_id}/manifest")
+def get_manifest(
+    submission_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The compliance manifest for a fill — visible to the request's buyer or the
+    submitting provider."""
+    submission = _get_submission_or_404(submission_id, db)
+    data_request = db.query(DataRequest).filter(DataRequest.id == str(submission.request_id)).first()
+    if str(submission.provider_id) != str(current_user.id) and \
+       (not data_request or str(data_request.requester_id) != str(current_user.id)):
+        raise HTTPException(status_code=404, detail="Submission not found")
+    return _compliance_manifest(submission, db)
 
 
 # ---------------------------------------------------------------------------
