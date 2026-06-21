@@ -51,6 +51,23 @@ export default defineNuxtConfig({
       ],
     },
   },
+  // Pre-render marketing + guides for crawlability and speed (SSG); the app
+  // routes stay SSR/SPA. crawlLinks off so it won't wander into app pages that
+  // need the backend. Client-only auth plugins don't run during prerender.
+  nitro: {
+    prerender: {
+      crawlLinks: false,
+      routes: [
+        '/', '/about', '/contact', '/terms', '/privacy', '/guides',
+        '/guides/how-to-write-a-good-data-request',
+        '/guides/how-escrow-and-settlement-works',
+        '/guides/selling-data-on-rowbound',
+        '/guides/licensing-and-provenance',
+        '/guides/your-data-and-gdpr',
+        '/guides/partial-fulfilment-and-cross-mode',
+      ],
+    },
+  },
   runtimeConfig: {
     // Private: only available on server-side
     apiSecret: process.env.API_SECRET || '',
