@@ -77,15 +77,8 @@ async function confirmSubmission(submissionId: string) {
     }
 }
 
-// Human-readable acceptance-window countdown from a submission's confirm_by.
-function windowRemaining(confirmBy: string | null): string | null {
-    if (!confirmBy) return null
-    const ms = new Date(confirmBy).getTime() - Date.now()
-    if (ms <= 0) return 'window elapsed — auto-release pending'
-    const h = Math.floor(ms / 3.6e6)
-    const m = Math.floor((ms % 3.6e6) / 6e4)
-    return (h > 0 ? `${h}h ${m}m` : `${m}m`) + ' left to confirm or dispute'
-}
+// Acceptance-window countdown — shared, unit-tested helper (utils/acceptanceWindow).
+import { windowRemaining } from '~/utils/acceptanceWindow'
 
 async function expireRequest() {
     if (!confirm('Close this request and refund unspent budget?')) return

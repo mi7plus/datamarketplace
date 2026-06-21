@@ -102,6 +102,10 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Unit tests (Vitest)
+        working-directory: frontend
+        run: npm test
+
       - name: Build
         working-directory: frontend
         run: npm run build
