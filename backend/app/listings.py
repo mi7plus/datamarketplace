@@ -165,6 +165,28 @@ def get_listing(listing_id: str, db: Session = Depends(get_db)):
     return _serialize(listing, full=True)
 
 
+@router.post("/{listing_id}/takedown")
+def takedown_listing(
+    listing_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Admin takedown (Phase 8): make a catalog dataset unreachable — drops it from
+    the catalog, blocks new purchases and cross-mode fills, and revokes delivery on
+    already-issued links. The stored file is preserved for legal review.
+    """
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    listing = db.query(Listing).filter(Listing.id == listing_id, Listing.is_deleted == False).first()
+    if not listing:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    listing.status = ListingStatus.TAKEN_DOWN
+    listing.quarantined = True          # download_purchase 410s on quarantined/taken-down listings
+    db.commit()
+    return {"listing_id": listing_id, "status": "taken_down"}
+
+
 @router.get("/{listing_id}/sample")
 def get_listing_sample(listing_id: str, db: Session = Depends(get_db)):
     """Pre-purchase preview — the neutralized sample rows only, never the full file."""
