@@ -184,6 +184,10 @@ const trust = [
                     <p class="text-sm text-muted mt-1">{{ t[1] }}</p>
                 </UiCard>
             </div>
+            <p class="text-sm text-muted mt-5">
+                See exactly how it works in the
+                <NuxtLink to="/guides/how-escrow-and-settlement-works" class="text-accent-deep hover:underline">escrow &amp; settlement guide</NuxtLink>.
+            </p>
         </section>
 
         <!-- 8 / 9 · DUAL PATH + FINAL CTA -->

@@ -61,7 +61,12 @@ async function submit() {
 <template>
     <PageWrapper class="max-w-2xl">
         <BackButton fallback="/catalog" />
-        <h1 class="text-2xl font-bold text-ink mb-6">List a dataset</h1>
+        <h1 class="text-2xl font-bold text-ink mb-1">List a dataset</h1>
+        <p class="text-sm text-muted mb-6">
+            See
+            <NuxtLink to="/guides/selling-data-on-rowbound" class="text-accent-deep hover:underline">selling data on Rowbound</NuxtLink>
+            for pricing, provenance and payouts.
+        </p>
 
         <div class="space-y-4">
             <label class="block text-sm">

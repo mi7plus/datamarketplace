@@ -6,6 +6,7 @@ export default defineNuxtConfig({
     '@nuxt/eslint',
     '@nuxtjs/tailwindcss',
     '@pinia/nuxt',
+    '@nuxt/content',
   ],
   css: ['~/assets/css/main.css'],
   // Baseline security headers on every route (S6). A full strict CSP needs the

@@ -50,3 +50,40 @@ a {
 .input {
     @apply w-full border border-surface-border rounded p-2;
 }
+
+/* Markdown guide typography — serif headings, sans body, brand accents. */
+.guide-prose h2 {
+    font-family: Georgia, "Times New Roman", serif;
+    color: var(--rb-ink);
+    font-weight: 700;
+    font-size: 1.4rem;
+    margin: 2rem 0 0.75rem;
+}
+.guide-prose h3 {
+    font-family: Georgia, "Times New Roman", serif;
+    color: var(--rb-ink);
+    font-weight: 700;
+    font-size: 1.15rem;
+    margin: 1.5rem 0 0.5rem;
+}
+.guide-prose p { color: #334155; line-height: 1.7; margin: 0.75rem 0; }
+.guide-prose ul, .guide-prose ol { margin: 0.75rem 0 0.75rem 1.25rem; color: #334155; line-height: 1.7; }
+.guide-prose ul { list-style: disc; }
+.guide-prose ol { list-style: decimal; }
+.guide-prose li { margin: 0.25rem 0; }
+.guide-prose a { color: var(--rb-accent-deep); text-decoration: underline; }
+.guide-prose code {
+    background: var(--rb-bg);
+    border: 1px solid var(--rb-border);
+    border-radius: 4px;
+    padding: 0.1rem 0.35rem;
+    font-size: 0.85em;
+}
+.guide-prose blockquote {
+    border-left: 3px solid var(--rb-accent);
+    padding-left: 1rem;
+    color: var(--rb-muted);
+    font-style: italic;
+    margin: 1rem 0;
+}
+.guide-prose strong { color: var(--rb-ink); }
