@@ -61,6 +61,7 @@ def _serialize_submission(s: Submission) -> dict:
         "validated_amount": s.validated_amount,
         "accepted_amount": s.accepted_amount,
         "amount_due": s.amount_due,
+        "commission_amount": s.commission_amount,
         "content_link": s.content_link,
         "dataset_hash": s.dataset_hash,
         "quality_score": s.quality_score,
@@ -322,6 +323,11 @@ def _release_and_pay(submission_id: str, db: Session) -> Submission:
     if provider and provider.payout_account_changed_at:
         if datetime.utcnow() < provider.payout_account_changed_at + timedelta(hours=PAYOUT_COOLDOWN_HOURS):
             return submission
+
+    # Platform take-rate: record commission before releasing so the supplier
+    # transfer is net (escrow ledger still records the full amount — see commission.py).
+    from app.commission import compute_commission
+    submission.commission_amount = compute_commission(submission.amount_due, submission.source)
 
     payment = get_payment_provider()
     payment.release_to_provider(submission, db)

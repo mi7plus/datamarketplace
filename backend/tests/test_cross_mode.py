@@ -80,10 +80,13 @@ def test_request_filled_by_upload_plus_catalog_deduped():
             assert n == 10
             # the catalog fill is PAID and tagged source=catalog
             row = db.execute(text(
-                "SELECT status, source, accepted_amount FROM submissions WHERE id=:s"),
+                "SELECT status, source, accepted_amount, amount_due, commission_amount "
+                "FROM submissions WHERE id=:s"),
                 {"s": body["submission_id"]}).first()
             # raw SQL returns the enum NAME (uppercase); source is a plain string
             assert row.status == "PAID" and row.source == "catalog" and row.accepted_amount == 4
+            # take-rate (Phase 7): catalog = 10% of 4 × $1.00 = $0.40
+            assert float(row.amount_due) == 4.0 and float(row.commission_amount) == 0.40
             # listing stock reduced by the 4 used (10 listed - 4)
             avail = db.execute(text("SELECT available_quantity FROM listings WHERE id=:l"),
                                {"l": listing_id}).scalar()

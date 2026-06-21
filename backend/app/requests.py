@@ -258,6 +258,8 @@ def fulfil_from_listing(
 
     # Catalog data already exists → settle immediately (no acceptance window).
     if submission.status in ("accepted", "partially_accepted"):
+        from app.commission import compute_commission
+        submission.commission_amount = compute_commission(submission.amount_due, submission.source)
         payment.release_to_provider(submission, db)
         submission = mark_paid(submission, db)
 

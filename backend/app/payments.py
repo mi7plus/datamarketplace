@@ -196,8 +196,10 @@ class StripePaymentProvider(PaymentProvider):
         provider = db.get(UserAuth, str(submission.provider_id))
         if not provider or not provider.stripe_account_id:
             raise ValueError("Provider has no connected Stripe account — cannot release funds")
+        # Transfer net of platform commission (the platform keeps the rest as its take).
+        net = float(submission.amount_due or 0) - float(submission.commission_amount or 0)
         transfer = stripe.Transfer.create(
-            amount=int((submission.amount_due or 0) * 100),
+            amount=int(net * 100),
             currency="usd",
             destination=provider.stripe_account_id,
             metadata={
@@ -265,8 +267,9 @@ class StripePaymentProvider(PaymentProvider):
     def release_purchase(self, purchase, supplier, db: Session) -> str:
         if not supplier or not supplier.stripe_account_id:
             raise ValueError("Supplier has no connected Stripe account — cannot release funds")
+        net = float(purchase.amount or 0) - float(getattr(purchase, "commission_amount", 0) or 0)
         transfer = stripe.Transfer.create(
-            amount=int((float(purchase.amount or 0)) * 100),
+            amount=int(net * 100),
             currency="usd",
             destination=supplier.stripe_account_id,
             metadata={"purchase_id": str(purchase.id)},

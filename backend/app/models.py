@@ -129,6 +129,7 @@ class Submission(BaseModel):
     accepted_amount = Column(Integer, default=0)    # set by buyer at acceptance (Phase 4)
     validated_amount = Column(Integer, nullable=True)  # units passing ingest validation (Phase 3)
     amount_due = Column(Numeric(12, 2), nullable=True)  # accepted_amount × price_per_unit (set at acceptance)
+    commission_amount = Column(Numeric(12, 2), nullable=True)  # platform take, set at settlement (Phase 7)
     validation_report = Column(JSON, nullable=True)
     request = relationship("DataRequest", back_populates="submissions")
     provider = relationship("UserAuth", back_populates="submissions")
@@ -315,6 +316,7 @@ class Purchase(BaseModel):
     quantity = Column(Integer, nullable=False)
     unit_price = Column(Numeric(12, 2), nullable=False)     # snapshot at purchase time
     amount = Column(Numeric(12, 2), nullable=False)         # quantity × unit_price
+    commission_amount = Column(Numeric(12, 2), nullable=True)   # platform take (Phase 7)
     status = Column(String, default="pending")              # pending | paid | refunded
     storage_location = Column(String)
     listing = relationship("Listing")

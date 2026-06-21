@@ -275,7 +275,9 @@ def purchase_listing(
     purchase.storage_location = get_storage().save(pkey, sliced)
 
     # Settle through the SAME payment provider as Request fulfilment: charge the
-    # buyer, transfer to the supplier. Idempotent (keyed by purchase id).
+    # buyer, transfer to the supplier (net of platform commission). Idempotent.
+    from app.commission import compute_commission
+    purchase.commission_amount = compute_commission(amount, "catalog")
     payment.hold_purchase(purchase, db)
     payment.release_purchase(purchase, supplier, db)
     purchase.status = "paid"
