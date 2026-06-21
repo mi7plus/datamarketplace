@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>/about</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>/contact</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>/guides</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>/guides/how-to-write-a-good-data-request</loc><priority>0.7</priority></url>
+  <url><loc>/guides/how-escrow-and-settlement-works</loc><priority>0.7</priority></url>
+  <url><loc>/guides/selling-data-on-rowbound</loc><priority>0.7</priority></url>
+  <url><loc>/guides/licensing-and-provenance</loc><priority>0.7</priority></url>
+  <url><loc>/guides/your-data-and-gdpr</loc><priority>0.7</priority></url>
+  <url><loc>/guides/partial-fulfilment-and-cross-mode</loc><priority>0.7</priority></url>
+  <url><loc>/terms</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+  <url><loc>/privacy</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+</urlset>

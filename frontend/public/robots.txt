@@ -1,2 +1,7 @@
 User-Agent: *
-Disallow:
+Allow: /
+Disallow: /profile
+Disallow: /submissions
+Disallow: /purchases
+
+Sitemap: /sitemap.xml

@@ -27,10 +27,27 @@ export default defineNuxtConfig({
       meta: [
         { name: 'description', content: 'Get exactly the data you need — buy it, request it, or collect it — and pay only for matching records.' },
         { name: 'theme-color', content: '#0F1E3D' },
+        { property: 'og:site_name', content: 'Rowbound' },
+        { property: 'og:type', content: 'website' },
+        { property: 'og:image', content: '/brand/Rowbound_icon_tile.svg' },
+        { name: 'twitter:card', content: 'summary' },
+        { name: 'twitter:image', content: '/brand/Rowbound_icon_tile.svg' },
       ],
       link: [
         { rel: 'icon', type: 'image/svg+xml', href: '/brand/Rowbound_icon_tile.svg' },
         { rel: 'alternate icon', href: '/favicon.ico' },
+      ],
+      script: [
+        {
+          type: 'application/ld+json',
+          innerHTML: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'Organization',
+            name: 'Rowbound',
+            description: 'The data clearing house — buy, request, or collect data through one funded, escrowed, per-record settlement engine.',
+            slogan: 'The data clearing house',
+          }),
+        },
       ],
     },
   },
