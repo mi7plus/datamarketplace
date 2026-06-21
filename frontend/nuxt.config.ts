@@ -54,19 +54,26 @@ export default defineNuxtConfig({
   // Pre-render marketing + guides for crawlability and speed (SSG); the app
   // routes stay SSR/SPA. crawlLinks off so it won't wander into app pages that
   // need the backend. Client-only auth plugins don't run during prerender.
+  // Pre-render marketing + guides for SEO/speed in normal prod builds. NOTE: the
+  // site-gate (server/middleware/site-gate) covers all SSR routes + everything in
+  // `npm run dev`; prerendered static pages here are public brochure content and are
+  // the one thing the gate doesn't cover in a prod build. For a fully-gated staging
+  // build, build with PRERENDER_MARKETING=false to SSR everything.
   nitro: {
-    prerender: {
-      crawlLinks: false,
-      routes: [
-        '/', '/about', '/contact', '/terms', '/privacy', '/guides',
-        '/guides/how-to-write-a-good-data-request',
-        '/guides/how-escrow-and-settlement-works',
-        '/guides/selling-data-on-rowbound',
-        '/guides/licensing-and-provenance',
-        '/guides/your-data-and-gdpr',
-        '/guides/partial-fulfilment-and-cross-mode',
-      ],
-    },
+    prerender: process.env.PRERENDER_MARKETING === 'false'
+      ? undefined
+      : {
+          crawlLinks: false,
+          routes: [
+            '/', '/about', '/contact', '/terms', '/privacy', '/guides',
+            '/guides/how-to-write-a-good-data-request',
+            '/guides/how-escrow-and-settlement-works',
+            '/guides/selling-data-on-rowbound',
+            '/guides/licensing-and-provenance',
+            '/guides/your-data-and-gdpr',
+            '/guides/partial-fulfilment-and-cross-mode',
+          ],
+        },
   },
   runtimeConfig: {
     // Private: only available on server-side

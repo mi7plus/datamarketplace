@@ -1,0 +1,84 @@
+// Site-wide password gate (staging / dev "private preview").
+//
+// Active only when SITE_PASSWORD is set — so it's on for dev/staging deploys and
+// off in production unless you choose to set it. It runs in the Nitro server, so it
+// gates EVERYTHING the site serves (SSR pages, prerendered marketing, assets) and
+// the password is checked server-side (never in the client bundle). This is a
+// shared "is this human allowed to look yet" gate, separate from the app's login.
+
+import { createHash } from 'node:crypto'
+
+const COOKIE = 'rb_site_gate'
+
+function token(password: string): string {
+    return createHash('sha256').update(`rb:${password}`).digest('hex')
+}
+
+function gatePage(error?: string): string {
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Rowbound — private preview</title>
+<style>
+  :root{--ink:#0F1E3D;--teal:#2DD4BF;--muted:#94A3B8;--border:#1e2f52}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:var(--ink);color:#fff;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .card{width:100%;max-width:360px;padding:2rem}
+  h1{font-family:Georgia,"Times New Roman",serif;font-size:1.6rem;margin:0 0 .25rem}
+  p{color:var(--muted);font-size:.9rem;margin:0 0 1.5rem}
+  label{display:block;font-size:.85rem;color:var(--muted);margin-bottom:.35rem}
+  input{width:100%;padding:.6rem .75rem;border-radius:.5rem;border:1px solid var(--border);
+    background:#0b1731;color:#fff;font-size:.95rem}
+  input:focus{outline:2px solid var(--teal);outline-offset:1px}
+  button{width:100%;margin-top:1rem;padding:.6rem;border:0;border-radius:.5rem;
+    background:var(--teal);color:var(--ink);font-weight:600;font-size:.95rem;cursor:pointer}
+  .err{color:#fca5a5;font-size:.8rem;margin-top:.75rem}
+  .tag{color:var(--teal);font-size:.7rem;letter-spacing:.15em;text-transform:uppercase;margin-bottom:1.5rem}
+</style></head>
+<body><form class="card" method="POST" action="/__gate">
+  <div class="tag">The data clearing house</div>
+  <h1>Rowbound</h1>
+  <p>Private preview — enter the access password to continue.</p>
+  <label for="p">Password</label>
+  <input id="p" name="password" type="password" autocomplete="current-password" autofocus />
+  <button type="submit">Enter</button>
+  ${error ? `<div class="err">${error}</div>` : ''}
+</form></body></html>`
+}
+
+export default defineEventHandler(async (event) => {
+    const password = process.env.SITE_PASSWORD
+    if (!password) return   // gate disabled — normal site
+
+    const path = event.path || '/'
+    const expected = token(password)
+
+    // Unlock handler: a plain form POST (no JS) to /__gate.
+    if (event.method === 'POST' && path.startsWith('/__gate')) {
+        const body = await readBody(event).catch(() => ({}))
+        if (body?.password === password) {
+            setCookie(event, COOKIE, expected, {
+                httpOnly: true,
+                sameSite: 'lax',
+                path: '/',
+                maxAge: 60 * 60 * 24 * 30,
+                secure: process.env.NODE_ENV === 'production',
+            })
+            await sendRedirect(event, '/', 302)
+            return
+        }
+        setResponseStatus(event, 401)
+        setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
+        return gatePage('Incorrect password.')
+    }
+
+    // Already unlocked → let the request through.
+    if (getCookie(event, COOKIE) === expected) return
+
+    // Locked → serve the gate for any path (the page is self-contained, no app assets).
+    setResponseStatus(event, 401)
+    setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
+    setResponseHeader(event, 'cache-control', 'no-store')
+    return gatePage()
+})
