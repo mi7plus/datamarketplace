@@ -41,7 +41,7 @@ async function loadSubmissions() {
 
 onMounted(async () => {
     await loadRequest()
-    if (request.value) await Promise.all([loadSubmissions(), loadLedger()])
+    if (request.value) await Promise.all([loadSubmissions(), loadLedger(), loadMatchingListings()])
     loading.value = false
 })
 
@@ -117,6 +117,31 @@ async function fundRequest() {
         actionError.value = e.message
     } finally {
         funding.value = false
+    }
+}
+
+const matchingListings = ref<any[]>([])
+const filling = ref<string | null>(null)
+
+async function loadMatchingListings() {
+    if (auth.user?.role !== 'requester') return
+    if (!['open', 'partially_fulfilled'].includes(request.value?.status)) return
+    if (!request.value?.spec?.unique_key?.length) return
+    try {
+        matchingListings.value = await api.get(`/requests/${route.params.id}/matching-listings`)
+    } catch { /* non-owner / no matches */ }
+}
+
+async function fillFromListing(listingId: string) {
+    filling.value = listingId
+    actionError.value = null
+    try {
+        await api.post(`/requests/${request.value.id}/fulfil-from-listing`, { listing_id: listingId })
+        await Promise.all([loadRequest(), loadSubmissions(), loadLedger(), loadMatchingListings()])
+    } catch (e: any) {
+        actionError.value = e.message
+    } finally {
+        filling.value = null
     }
 }
 
@@ -219,6 +244,34 @@ const subColour: Record<string, string> = {
                 <p class="text-sm text-gray-500">
                     <strong>{{ remaining.toLocaleString() }}</strong> {{ request.unit ?? 'units' }} still needed
                 </p>
+            </div>
+
+            <!-- ============================================================
+                 CROSS-MODE FUNNEL — fill the remaining gap from the catalog
+                 ============================================================ -->
+            <div v-if="matchingListings.length && remaining > 0"
+                class="border border-accent rounded-lg p-4 bg-white space-y-3">
+                <h2 class="font-semibold text-sm text-ink uppercase tracking-wide">
+                    Fill from catalog
+                </h2>
+                <p class="text-xs text-muted">
+                    These listings share this request's key. Records you pull are deduped against
+                    what's already accepted and settled per record from this request's escrow.
+                </p>
+                <div v-for="l in matchingListings" :key="l.id"
+                    class="flex items-center justify-between gap-3 border border-surface-border rounded p-3">
+                    <div class="text-sm min-w-0">
+                        <div class="font-medium text-ink truncate">{{ l.title }}</div>
+                        <div class="text-xs text-surface-label">
+                            {{ l.available_quantity?.toLocaleString() }} available · ${{ l.price_per_unit }}/{{ l.unit ?? 'record' }}
+                            <span v-if="l.provenance"> · {{ l.provenance }}</span>
+                        </div>
+                    </div>
+                    <button @click="fillFromListing(l.id)" :disabled="filling === l.id"
+                        class="shrink-0 bg-accent-deep text-white px-4 py-1.5 rounded text-sm hover:bg-accent disabled:opacity-50">
+                        {{ filling === l.id ? 'Filling…' : 'Fill from this' }}
+                    </button>
+                </div>
             </div>
 
             <!-- Pricing -->
@@ -416,12 +469,18 @@ const subColour: Record<string, string> = {
                 </h2>
                 <div v-for="s in decidedSubmissions" :key="s.id"
                     class="border rounded p-3 space-y-2 text-sm">
-                    <div class="flex justify-between items-center">
+                    <div class="flex justify-between items-center gap-2">
                         <span class="text-gray-400 text-xs font-mono">{{ s.id.slice(0, 8) }}…</span>
-                        <span class="text-xs px-2 py-0.5 rounded-full"
-                            :class="subColour[s.status] ?? 'bg-gray-100 text-gray-600'">
-                            {{ s.status.replace(/_/g, ' ') }}
-                        </span>
+                        <div class="flex items-center gap-1.5">
+                            <span v-if="s.source && s.source !== 'request'"
+                                class="text-xs px-2 py-0.5 rounded-full bg-accent/15 text-accent-deep capitalize">
+                                {{ s.source }}
+                            </span>
+                            <span class="text-xs px-2 py-0.5 rounded-full"
+                                :class="subColour[s.status] ?? 'bg-gray-100 text-gray-600'">
+                                {{ s.status.replace(/_/g, ' ') }}
+                            </span>
+                        </div>
                     </div>
                     <dl class="grid grid-cols-4 gap-x-4 gap-y-1 text-xs text-gray-600">
                         <dt>Offered</dt><dd>{{ s.offered_amount?.toLocaleString() }}</dd>

@@ -101,6 +101,38 @@ def fund_request(
     return request
 
 
+@router.get("/{request_id}/matching-listings")
+def matching_listings(
+    request_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Catalog listings the buyer could fill this request from — same declared
+    unique key, in stock, not their own. Powers the cross-mode funnel."""
+    from app.listings import _serialize as _serialize_listing
+    request = db.query(DataRequest).filter(DataRequest.id == request_id, DataRequest.is_deleted == False).first()
+    if not request or str(request.requester_id) != str(current_user.id):
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    unique_key = (request.spec or {}).get("unique_key") or []
+    if not unique_key:
+        return []
+    want = set(unique_key)
+
+    listings = db.query(Listing).filter(
+        Listing.is_deleted == False,
+        Listing.status == ListingStatus.ACTIVE,
+        Listing.quarantined == False,
+        Listing.available_quantity > 0,
+        Listing.supplier_id != current_user.id,
+    ).all()
+    return [
+        _serialize_listing(l)
+        for l in listings
+        if set((l.spec or {}).get("unique_key") or []) == want
+    ]
+
+
 class FulfilFromListing(BaseModel):
     listing_id: str
     quantity: Optional[int] = None     # max records to pull; default = as much as fits
