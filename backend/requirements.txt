@@ -16,3 +16,4 @@ pytest
 apscheduler
 
 pyotp
+clamd

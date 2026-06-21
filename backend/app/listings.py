@@ -22,6 +22,7 @@ from app.models import Listing, ListingStatus, License, Purchase, UserAuth as Us
 from app.auth import get_current_user
 from app.ingest import validate_dataset
 from app.filesafety import assert_safe_text_upload
+from app.malware import assert_clean
 from app.storage import get_storage
 from app.payments import purchase_balance, get_payment_provider
 
@@ -96,6 +97,7 @@ async def create_listing(
     if len(file_bytes) > MAX_FILE_BYTES:
         raise HTTPException(status_code=413, detail="File exceeds 100 MB limit")
     assert_safe_text_upload(file_bytes, file.filename or "upload")
+    assert_clean(file_bytes)   # active-content scan (S2)
 
     result = validate_dataset(file_bytes=file_bytes, filename=file.filename or "upload", spec=spec_dict)
     if result.validated_amount <= 0:

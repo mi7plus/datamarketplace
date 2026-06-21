@@ -14,6 +14,7 @@ from app.models import Submission, DataRequest, UserAuth as User, SubmissionStat
 from app.auth import get_current_user
 from app.ingest import validate_dataset
 from app.filesafety import assert_safe_text_upload
+from app.malware import assert_clean
 from app.lifecycle import validate_submission, accept_submission, transition_submission, expire_request, mark_paid
 from app.storage import get_storage
 from app.payments import get_payment_provider, ledger_balance
@@ -125,6 +126,8 @@ async def create_submission(
     # Decide it's really a text dataset by content, not the (forgeable) extension —
     # a renamed .exe/.zip/image is refused before it's stored or served.
     assert_safe_text_upload(file_bytes, file.filename or "upload")
+    # Active-content scan (S2) — an infected file is never stored or made downloadable.
+    assert_clean(file_bytes)
 
     result = validate_dataset(
         file_bytes=file_bytes,
