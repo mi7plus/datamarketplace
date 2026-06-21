@@ -124,3 +124,98 @@ def beachhead(
             "take": str(catalog_take),
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Concierge tooling (cold-start) — manually source supply + seed the catalog
+# ---------------------------------------------------------------------------
+
+@router.get("/concierge/under-filled")
+def under_filled(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Open requests still short of their target — where an admin should source supply."""
+    _admin_only(current_user)
+    rows = db.query(DataRequest).filter(
+        DataRequest.is_deleted == False,
+        DataRequest.status.in_([RequestStatus.OPEN, RequestStatus.PARTIALLY_FULFILLED]),
+    ).all()
+    out = []
+    for r in rows:
+        remaining = (r.amount_required or 0) - (r.accepted_total or 0)
+        if remaining <= 0:
+            continue
+        out.append({
+            "id": str(r.id),
+            "title": r.title,
+            "category": r.category,
+            "mode": r.mode,
+            "remaining": remaining,
+            "fill_rate": round((r.accepted_total or 0) / r.amount_required, 4) if r.amount_required else 0.0,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        })
+    out.sort(key=lambda x: x["remaining"], reverse=True)
+    return out
+
+
+@router.post("/concierge/seed-catalog")
+def seed_catalog(
+    supplier_email: str = Query("concierge-supplier@rowbound.local"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Pre-load anchor listings so the catalog is never empty for early buyers."""
+    _admin_only(current_user)
+    from app.seed_listings import seed
+    created = seed(supplier_email)
+    return {"seeded": created, "supplier_email": supplier_email}
+
+
+@router.get("/leakage")
+def leakage(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Off-platform disintermediation signals: requests funded then expired unfilled,
+    and requests where the buyer reviewed validated submissions but never accepted
+    (samples seen, then possibly completed off-platform). Escrow + per-record
+    settlement are the retention mechanic; these flags surface where it's leaking.
+    """
+    _admin_only(current_user)
+
+    expired_unfilled = db.query(DataRequest).filter(
+        DataRequest.is_deleted == False,
+        DataRequest.status == RequestStatus.EXPIRED,
+        DataRequest.accepted_total < DataRequest.amount_required,
+    ).all()
+
+    # Requests with validated (reviewable) submissions but nothing accepted.
+    reviewed_ids = {
+        str(s.request_id)
+        for s in db.query(Submission).filter(
+            Submission.status == "validated", Submission.is_deleted == False
+        ).all()
+    }
+    abandoned = db.query(DataRequest).filter(
+        DataRequest.is_deleted == False,
+        DataRequest.status.in_([RequestStatus.OPEN, RequestStatus.PARTIALLY_FULFILLED]),
+        DataRequest.accepted_total == 0,
+    ).all()
+    abandoned_after_review = [r for r in abandoned if str(r.id) in reviewed_ids]
+
+    def _slim(r):
+        return {"id": str(r.id), "title": r.title, "category": r.category,
+                "accepted_total": r.accepted_total, "amount_required": r.amount_required}
+
+    return {
+        "funded_then_expired": {
+            "count": len(expired_unfilled),
+            "requests": [_slim(r) for r in expired_unfilled[:50]],
+        },
+        "reviewed_not_accepted": {
+            "count": len(abandoned_after_review),
+            "requests": [_slim(r) for r in abandoned_after_review[:50]],
+        },
+    }
