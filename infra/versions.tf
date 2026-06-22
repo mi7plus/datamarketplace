@@ -20,8 +20,8 @@ provider "aws" {
   region = var.region
   default_tags {
     tags = {
-      Project = "rowbound"
-      Env     = var.env
+      Project   = "rowbound"
+      Env       = var.env
       ManagedBy = "terraform"
     }
   }

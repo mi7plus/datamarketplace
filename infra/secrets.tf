@@ -12,5 +12,5 @@ resource "aws_secretsmanager_secret_version" "app" {
     STRIPE_SECRET_KEY     = "REPLACE_ME"
     STRIPE_WEBHOOK_SECRET = "REPLACE_ME"
   })
-  lifecycle { ignore_changes = [secret_string] }   # don't clobber real values on apply
+  lifecycle { ignore_changes = [secret_string] } # don't clobber real values on apply
 }

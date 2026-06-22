@@ -4,7 +4,7 @@ data "aws_caller_identity" "me" {}
 resource "aws_iam_role" "task_exec" {
   name = "${var.name}-${var.env}-task-exec"
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version   = "2012-10-17"
     Statement = [{ Effect = "Allow", Principal = { Service = "ecs-tasks.amazonaws.com" }, Action = "sts:AssumeRole" }]
   })
 }
@@ -26,7 +26,7 @@ resource "aws_iam_role_policy" "task_exec_secrets" {
 
 # --- ECS TASK role (the app's own AWS permissions: just its S3 bucket) ---
 resource "aws_iam_role" "task" {
-  name = "${var.name}-${var.env}-task"
+  name               = "${var.name}-${var.env}-task"
   assume_role_policy = aws_iam_role.task_exec.assume_role_policy
 }
 resource "aws_iam_role_policy" "task_s3" {
@@ -45,7 +45,7 @@ resource "aws_iam_role_policy" "task_s3" {
 resource "aws_iam_role" "scheduler" {
   name = "${var.name}-${var.env}-scheduler"
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version   = "2012-10-17"
     Statement = [{ Effect = "Allow", Principal = { Service = "scheduler.amazonaws.com" }, Action = "sts:AssumeRole" }]
   })
 }
@@ -87,8 +87,8 @@ resource "aws_iam_role_policy" "github_deploy" {
     Version = "2012-10-17"
     Statement = [
       { Effect = "Allow", Action = ["ecr:GetAuthorizationToken"], Resource = "*" },
-      { Effect = "Allow", Action = ["ecr:BatchCheckLayerAvailability","ecr:InitiateLayerUpload","ecr:UploadLayerPart","ecr:CompleteLayerUpload","ecr:PutImage","ecr:BatchGetImage","ecr:GetDownloadUrlForLayer"], Resource = aws_ecr_repository.app.arn },
-      { Effect = "Allow", Action = ["ecs:RegisterTaskDefinition","ecs:UpdateService","ecs:DescribeServices","ecs:DescribeTaskDefinition","ecs:RunTask","ecs:DescribeTasks"], Resource = "*" },
+      { Effect = "Allow", Action = ["ecr:BatchCheckLayerAvailability", "ecr:InitiateLayerUpload", "ecr:UploadLayerPart", "ecr:CompleteLayerUpload", "ecr:PutImage", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"], Resource = aws_ecr_repository.app.arn },
+      { Effect = "Allow", Action = ["ecs:RegisterTaskDefinition", "ecs:UpdateService", "ecs:DescribeServices", "ecs:DescribeTaskDefinition", "ecs:RunTask", "ecs:DescribeTasks"], Resource = "*" },
       { Effect = "Allow", Action = ["iam:PassRole"], Resource = [aws_iam_role.task.arn, aws_iam_role.task_exec.arn] }
     ]
   })

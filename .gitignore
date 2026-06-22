@@ -29,3 +29,8 @@ Thumbs.db
 
 # @nuxt/content local store
 frontend/.data/
+
+# Portable terraform binary (local only)
+infra/.bin/
+infra/.terraform/
+infra/.terraform.lock.hcl

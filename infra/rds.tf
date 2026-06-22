@@ -4,12 +4,12 @@ resource "aws_db_subnet_group" "this" {
 }
 
 resource "aws_db_instance" "this" {
-  identifier        = "${var.name}-${var.env}"
-  engine            = "postgres"
-  engine_version    = var.db_engine_version
-  instance_class    = var.db_instance_class
-  allocated_storage = 20
-  max_allocated_storage = 100          # storage autoscaling
+  identifier            = "${var.name}-${var.env}"
+  engine                = "postgres"
+  engine_version        = var.db_engine_version
+  instance_class        = var.db_instance_class
+  allocated_storage     = 20
+  max_allocated_storage = 100 # storage autoscaling
 
   db_name  = var.db_name
   username = var.db_username
@@ -21,8 +21,8 @@ resource "aws_db_instance" "this" {
   publicly_accessible    = false
   storage_encrypted      = true
 
-  backup_retention_period = 7
-  deletion_protection     = true
-  skip_final_snapshot     = false
+  backup_retention_period   = 7
+  deletion_protection       = true
+  skip_final_snapshot       = false
   final_snapshot_identifier = "${var.name}-${var.env}-final"
 }

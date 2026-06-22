@@ -3,26 +3,26 @@ locals {
 
   # Non-secret env for the container
   app_environment = [
-    { name = "AWS_REGION",      value = var.region },
-    { name = "USE_S3",          value = "true" },         # real AWS S3 via the task role (storage.py)
-    { name = "S3_BUCKET",       value = aws_s3_bucket.data.bucket },
-    { name = "POSTGRES_HOST",   value = aws_db_instance.this.address },
-    { name = "POSTGRES_PORT",   value = "5432" },
-    { name = "POSTGRES_DB",     value = var.db_name },
-    { name = "FRONTEND_URL",    value = var.frontend_url },
+    { name = "AWS_REGION", value = var.region },
+    { name = "USE_S3", value = "true" }, # real AWS S3 via the task role (storage.py)
+    { name = "S3_BUCKET", value = aws_s3_bucket.data.bucket },
+    { name = "POSTGRES_HOST", value = aws_db_instance.this.address },
+    { name = "POSTGRES_PORT", value = "5432" },
+    { name = "POSTGRES_DB", value = var.db_name },
+    { name = "FRONTEND_URL", value = var.frontend_url },
     { name = "STRIPE_USE_REAL", value = var.stripe_use_real },
     # Disable the in-process scheduler — the sweep runs as an EventBridge singleton
     # (scheduler.tf). The env var name must match app/sweep.py (SWEEP_ENABLED).
-    { name = "SWEEP_ENABLED",   value = "false" },
+    { name = "SWEEP_ENABLED", value = "false" },
   ]
 
   # Secrets injected from Secrets Manager (ARN:json-key::)
   app_secrets = [
-    { name = "POSTGRES_USER",        valueFrom = "${local.db_secret_arn}:username::" },
-    { name = "POSTGRES_PASSWORD",    valueFrom = "${local.db_secret_arn}:password::" },
-    { name = "SECRET_KEY",           valueFrom = "${aws_secretsmanager_secret.app.arn}:SECRET_KEY::" },
-    { name = "STRIPE_SECRET_KEY",    valueFrom = "${aws_secretsmanager_secret.app.arn}:STRIPE_SECRET_KEY::" },
-    { name = "STRIPE_WEBHOOK_SECRET",valueFrom = "${aws_secretsmanager_secret.app.arn}:STRIPE_WEBHOOK_SECRET::" },
+    { name = "POSTGRES_USER", valueFrom = "${local.db_secret_arn}:username::" },
+    { name = "POSTGRES_PASSWORD", valueFrom = "${local.db_secret_arn}:password::" },
+    { name = "SECRET_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:SECRET_KEY::" },
+    { name = "STRIPE_SECRET_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:STRIPE_SECRET_KEY::" },
+    { name = "STRIPE_WEBHOOK_SECRET", valueFrom = "${aws_secretsmanager_secret.app.arn}:STRIPE_WEBHOOK_SECRET::" },
   ]
 }
 
@@ -33,7 +33,10 @@ resource "aws_cloudwatch_log_group" "app" {
 
 resource "aws_ecs_cluster" "this" {
   name = "${var.name}-${var.env}"
-  setting { name = "containerInsights" value = "enabled" }
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
 }
 
 resource "aws_ecs_task_definition" "app" {
@@ -46,12 +49,12 @@ resource "aws_ecs_task_definition" "app" {
   task_role_arn            = aws_iam_role.task.arn
 
   container_definitions = jsonencode([{
-    name        = "app"
-    image       = "${aws_ecr_repository.app.repository_url}:${var.app_image_tag}"
-    essential   = true
+    name         = "app"
+    image        = "${aws_ecr_repository.app.repository_url}:${var.app_image_tag}"
+    essential    = true
     portMappings = [{ containerPort = 8000 }]
-    environment = local.app_environment
-    secrets     = local.app_secrets
+    environment  = local.app_environment
+    secrets      = local.app_secrets
     logConfiguration = {
       logDriver = "awslogs"
       options = {
@@ -76,7 +79,10 @@ resource "aws_lb_target_group" "app" {
   protocol    = "HTTP"
   vpc_id      = module.vpc.vpc_id
   target_type = "ip"
-  health_check { path = "/health" matcher = "200" }
+  health_check {
+    path    = "/health"
+    matcher = "200"
+  }
 }
 resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.this.arn
@@ -84,7 +90,10 @@ resource "aws_lb_listener" "https" {
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
   certificate_arn   = var.acm_certificate_arn
-  default_action { type = "forward" target_group_arn = aws_lb_target_group.app.arn }
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app.arn
+  }
 }
 resource "aws_lb_listener" "http_redirect" {
   load_balancer_arn = aws_lb.this.arn
@@ -92,7 +101,11 @@ resource "aws_lb_listener" "http_redirect" {
   protocol          = "HTTP"
   default_action {
     type = "redirect"
-    redirect { port = "443" protocol = "HTTPS" status_code = "HTTP_301" }
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
   }
 }
 
@@ -115,5 +128,5 @@ resource "aws_ecs_service" "app" {
     container_port   = 8000
   }
   depends_on = [aws_lb_listener.https]
-  lifecycle { ignore_changes = [task_definition, desired_count] }  # CI manages the running revision
+  lifecycle { ignore_changes = [task_definition, desired_count] } # CI manages the running revision
 }
