@@ -1,0 +1,8 @@
+region              = "eu-west-1"
+env                 = "prod"
+azs                 = ["eu-west-1a", "eu-west-1b"]
+db_engine_version   = "16"
+frontend_url        = "https://app.rowbound.example"
+acm_certificate_arn = "arn:aws:acm:eu-west-1:<ACCOUNT_ID>:certificate/<CERT_ID>"
+github_org          = "mi7plus"
+github_repo         = "datamarketplace"

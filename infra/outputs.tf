@@ -1,0 +1,10 @@
+output "alb_dns_name"        { value = aws_lb.this.dns_name }
+output "ecr_repository_url"  { value = aws_ecr_repository.app.repository_url }
+output "ecs_cluster"         { value = aws_ecs_cluster.this.name }
+output "ecs_service"         { value = aws_ecs_service.app.name }
+output "task_family"         { value = aws_ecs_task_definition.app.family }
+output "subnets_private"     { value = module.vpc.private_subnets }
+output "app_security_group"  { value = aws_security_group.app.id }
+output "s3_bucket"           { value = aws_s3_bucket.data.bucket }
+output "rds_endpoint"        { value = aws_db_instance.this.address }
+output "github_deploy_role"  { value = aws_iam_role.github_deploy.arn }
