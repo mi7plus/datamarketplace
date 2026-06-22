@@ -14,6 +14,8 @@ locals {
     # Disable the in-process scheduler — the sweep runs as an EventBridge singleton
     # (scheduler.tf). The env var name must match app/sweep.py (SWEEP_ENABLED).
     { name = "SWEEP_ENABLED", value = "false" },
+    # Ingest queue the app enqueues jobs onto (the Rust worker consumes it).
+    { name = "INGEST_QUEUE_URL", value = aws_sqs_queue.ingest.url },
   ]
 
   # Secrets injected from Secrets Manager (ARN:json-key::)
@@ -23,6 +25,8 @@ locals {
     { name = "SECRET_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:SECRET_KEY::" },
     { name = "STRIPE_SECRET_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:STRIPE_SECRET_KEY::" },
     { name = "STRIPE_WEBHOOK_SECRET", valueFrom = "${aws_secretsmanager_secret.app.arn}:STRIPE_WEBHOOK_SECRET::" },
+    # The app verifies this against the X-Internal-Secret header on callbacks.
+    { name = "INGEST_CALLBACK_SECRET", valueFrom = "${aws_secretsmanager_secret.app.arn}:INGEST_CALLBACK_SECRET::" },
   ]
 }
 

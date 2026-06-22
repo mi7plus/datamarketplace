@@ -10,6 +10,8 @@ pub mod keys;
 pub mod limits;
 pub mod media;
 pub mod tabular;
+#[cfg(feature = "queue")]
+pub mod worker;
 
 pub use contract::{IngestReport, IngestRequest, IngestStatus, Spec};
 pub use limits::Limits;

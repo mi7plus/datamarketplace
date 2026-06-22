@@ -20,6 +20,22 @@ use serde_json::json;
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt().with_target(false).init();
+
+    // `rowbound-ingest worker` runs the SQS consumer (deploy image, built with
+    // --features queue); no arg runs the HTTP service.
+    if std::env::args().nth(1).as_deref() == Some("worker") {
+        #[cfg(feature = "queue")]
+        {
+            rowbound_ingest::worker::run().await;
+            return;
+        }
+        #[cfg(not(feature = "queue"))]
+        {
+            eprintln!("worker mode requires building with --features queue");
+            std::process::exit(1);
+        }
+    }
+
     let app = Router::new()
         .route("/health", get(|| async { Json(json!({"status": "ok"})) }))
         .route("/ingest", post(ingest));

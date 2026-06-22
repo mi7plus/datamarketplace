@@ -105,6 +105,9 @@ jobs:
       - name: Test (incl. Python-parity hashes)
         working-directory: ingest-service
         run: cargo test
+      - name: Check the queue worker compiles (P4)
+        working-directory: ingest-service
+        run: cargo check --features queue
 
   frontend:
     name: Frontend — Nuxt build

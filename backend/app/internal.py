@@ -73,9 +73,17 @@ def ingest_result(
     sub.quality_score = report.quality_score
     sub.key_hashes = report.key_hashes
 
-    # Bulk-populate the dedup staging table (the allocation step reads from here).
-    for i, kh in enumerate(report.key_hashes):
-        db.add(SubmissionKeyStaging(submission_id=sub.id, ordinal=i, key_hash=kh))
+    # Populate the dedup staging table (the allocation step reads from here) —
+    # UNLESS the Rust worker already bulk-COPYed it on the async path. Guarding on
+    # existing rows lets worker-COPY and this callback compose without duplicates.
+    already_staged = (
+        db.query(SubmissionKeyStaging.id)
+        .filter(SubmissionKeyStaging.submission_id == sub.id)
+        .first()
+    )
+    if not already_staged:
+        for i, kh in enumerate(report.key_hashes):
+            db.add(SubmissionKeyStaging(submission_id=sub.id, ordinal=i, key_hash=kh))
 
     valid = report.status == "VALIDATED" and report.validated_amount > 0
     new_status = SubmissionStatus.VALIDATED if valid else SubmissionStatus.REJECTED_INVALID

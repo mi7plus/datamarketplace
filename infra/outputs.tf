@@ -8,3 +8,6 @@ output "app_security_group" { value = aws_security_group.app.id }
 output "s3_bucket" { value = aws_s3_bucket.data.bucket }
 output "rds_endpoint" { value = aws_db_instance.this.address }
 output "github_deploy_role" { value = aws_iam_role.github_deploy.arn }
+output "ingest_ecr_repository_url" { value = aws_ecr_repository.ingest.repository_url }
+output "ingest_queue_url" { value = aws_sqs_queue.ingest.url }
+output "ingest_worker_service" { value = aws_ecs_service.ingest_worker.name }

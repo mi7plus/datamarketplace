@@ -42,6 +42,10 @@ variable "app_image_tag" {
   type    = string
   default = "latest" # CI overrides per deploy
 }
+variable "ingest_image_tag" {
+  type    = string
+  default = "latest" # Rust ingest image; CI overrides per deploy
+}
 variable "app_cpu" {
   type    = number
   default = 512

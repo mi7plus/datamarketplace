@@ -11,6 +11,10 @@ resource "aws_secretsmanager_secret_version" "app" {
     SECRET_KEY            = "REPLACE_ME"
     STRIPE_SECRET_KEY     = "REPLACE_ME"
     STRIPE_WEBHOOK_SECRET = "REPLACE_ME"
+    # Shared secret the ingest worker presents to POST /internal/ingest-result,
+    # and the full DATABASE_URL the worker's sqlx pool connects with.
+    INGEST_CALLBACK_SECRET = "REPLACE_ME"
+    DATABASE_URL           = "REPLACE_ME"
   })
   lifecycle { ignore_changes = [secret_string] } # don't clobber real values on apply
 }
