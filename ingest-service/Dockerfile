@@ -10,7 +10,11 @@ COPY tests ./tests
 RUN cargo build --release --features queue
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
+# ffmpeg/ffprobe (av validate, metadata, thumbnail/transcode) + fpcalc (Chromaprint
+# audio fingerprint, from libchromaprint-tools). The Rust media path shells out to these.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl ffmpeg libchromaprint-tools \
+ && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/target/release/rowbound-ingest /usr/local/bin/rowbound-ingest
 RUN useradd -m -u 10001 appuser
 USER appuser

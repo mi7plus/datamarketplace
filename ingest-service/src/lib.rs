@@ -5,6 +5,7 @@
 //! accepted, never moves funds. Python takes `key_hashes` and does the locked
 //! allocation/cap/overlap. Keep it that way.
 
+pub mod av;
 pub mod contract;
 pub mod keys;
 pub mod limits;
@@ -37,6 +38,8 @@ pub fn ingest_limited(bytes: &[u8], filename: &str, spec: &Spec, limits: &Limits
     }
     if media::is_image(filename) {
         media::validate_image_limited(bytes, filename, limits.max_image_pixels)
+    } else if av::is_av(filename) {
+        av::validate_av(bytes, filename, &av::MediaTools::from_env())
     } else {
         validate_dataset(bytes, filename, spec)
     }

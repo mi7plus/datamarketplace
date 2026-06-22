@@ -19,9 +19,20 @@ moves funds. Python takes the `key_hashes` and does the locked allocation / cap 
 | P0 contract + skeleton | ✅ | `axum` `/health` + sync `POST /ingest`; serde contract in `contract.rs`. |
 | P1 tabular port + parity | ✅ | Port of `app/ingest.py`; **byte-identical hash parity** with Python proven (`tests/parity.rs` + live shadow check). Cut-over NOT done — Python ingest is still the live path. |
 | P2 staging anti-join + callback | ✅ Python side | `submission_key_staging` table + migration, the `EXCEPT` anti-join in `accept_submission` (flag `USE_STAGING_DEDUP`, in-Python fallback default), and `POST /internal/ingest-result` (idempotent, secret-gated) all landed in the backend with tests. Remaining: the Rust worker bulk-`COPY` into staging + the queue wiring (P4), and flipping the flag on after a shadow window. |
-| P3 media (first cut) | ✅ images | `media.rs`: image validate (format/dimensions/corruption) + metadata + gradient perceptual hash + **exact-file dedup** (`key_hashes=[dataset_hash]`, so it flows through the same anti-join). `ingest()` dispatches images vs tabular by extension. Tests cover validation, exact-file dedup, corruption reject, and near-dup < far-dup. Deferred: audio fingerprint + ffmpeg transcode/thumbnail (external binaries), and the perceptual **near-dup ANN search** (BK-tree/pgvector — a different data structure, deliberate follow-up). |
+| P3 media — images | ✅ | `media.rs`: image validate (format/dimensions/corruption) + metadata + gradient perceptual hash + **exact-file dedup**. Tests: validation, exact-file dedup, corruption reject, near-dup < far-dup. |
+| P3 media — audio/video | ✅ | `av.rs` shells out to **ffprobe** (validate + codec/duration/resolution metadata), **fpcalc** (Chromaprint audio fingerprint), **ffmpeg** (JPEG thumbnail). `tests/av.rs` generates fixtures with the local ffmpeg and self-skips if the binaries are absent. Prod image installs `ffmpeg`+`libchromaprint-tools`; tests point `MediaTools` at a gitignored `.bin/`. Still exact-file dedup. |
+| P3 perceptual near-dup search | ⛔ deliberate follow-up | ANN over Hamming space (BK-tree / pgvector). No binary needed — buildable here; deferred per the plan (start exact-file, add NN deliberately). |
 | P4 deploy | ✅ scaffolded | Worker SQS/S3/callback loop in `src/worker.rs` behind the `queue` feature (compiles + clippy-clean; built into the deploy image via `Dockerfile --features queue`). Terraform in `infra/ingest.tf`: own ECR repo, SQS queue + DLQ, HTTP service + autoscaling worker pool (scales on queue backlog), IAM scoped to the bucket + queue (no money tables). `terraform validate` passes. Not applied (no AWS account here). |
 | P5 file-safety caps | ✅ | `limits.rs`: oversize-upload + image pixel-bomb rejection (header-only dimension read, before decode). Configurable via `MAX_UPLOAD_BYTES` / `MAX_IMAGE_PIXELS`; tested. Deferred (need the queue): DLQ for poison jobs, per-job metrics, queue-backlog alerts. |
+
+## Media binaries (local dev)
+
+The audio/video path shells out to `ffprobe`/`ffmpeg`/`fpcalc`. In prod they're in
+the image (`apt-get install ffmpeg libchromaprint-tools`). Locally, drop the
+executables in `ingest-service/.bin/` (gitignored) — FFmpeg from ffmpeg.org's
+recommended Windows build, `fpcalc` from the AcoustID Chromaprint releases — or
+install them on PATH. `tests/av.rs` self-skips when they're missing. Override paths
+with `FFPROBE_BIN` / `FFMPEG_BIN` / `FPCALC_BIN`.
 
 ## Run / test
 

@@ -37,3 +37,5 @@ infra/.terraform.lock.hcl
 
 # Rust build artifacts
 ingest-service/target/
+# Portable media binaries (local only — prod installs ffmpeg/fpcalc in the image)
+ingest-service/.bin/
