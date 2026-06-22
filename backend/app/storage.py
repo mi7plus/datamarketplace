@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 
@@ -93,15 +94,31 @@ class LocalStorage(StorageBackend):
 # ---------------------------------------------------------------------------
 
 class MinioStorage(StorageBackend):
-    def __init__(self, endpoint_url: str, access_key: str, secret_key: str, bucket: str):
+    """S3-compatible storage. Two modes:
+      - MinIO/dev: explicit endpoint_url + static keys, and we create+lock the bucket.
+      - Real AWS S3: no endpoint_url (boto3 uses the AWS endpoint), no static keys
+        (the ECS task role supplies them via the default credential chain), region set,
+        SigV4 presigning, and we do NOT manage the bucket (Terraform owns it).
+    """
+
+    def __init__(self, bucket: str, *, endpoint_url: str | None = None,
+                 access_key: str | None = None, secret_key: str | None = None,
+                 region: str | None = None, manage_bucket: bool = True):
         self._bucket = bucket
-        self._client = boto3.client(
-            "s3",
-            endpoint_url=endpoint_url,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
-        )
-        self._ensure_bucket()
+        self._manage_bucket = manage_bucket
+        kwargs = {"config": Config(signature_version="s3v4", region_name=region)}
+        if region:
+            kwargs["region_name"] = region
+        if endpoint_url:
+            kwargs["endpoint_url"] = endpoint_url
+        # Only pass static creds when given; otherwise boto3's default chain (the
+        # task role / instance profile) is used — no static keys on AWS.
+        if access_key and secret_key:
+            kwargs["aws_access_key_id"] = access_key
+            kwargs["aws_secret_access_key"] = secret_key
+        self._client = boto3.client("s3", **kwargs)
+        if self._manage_bucket:
+            self._ensure_bucket()
 
     def _ensure_bucket(self) -> None:
         try:
@@ -175,8 +192,17 @@ def get_storage() -> StorageBackend:
         access_key = os.getenv("AWS_ACCESS_KEY_ID", "")
         secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", "")
         bucket = os.getenv("S3_BUCKET", "datamarketplace")
+        region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
         if endpoint and access_key and secret_key:
-            _backend = MinioStorage(endpoint, access_key, secret_key, bucket)
+            # MinIO / dev: explicit endpoint + static keys; we create+lock the bucket.
+            _backend = MinioStorage(bucket, endpoint_url=endpoint, access_key=access_key,
+                                    secret_key=secret_key, region=region or "us-east-1",
+                                    manage_bucket=True)
+        elif os.getenv("USE_S3", "").lower() == "true":
+            # Real AWS S3: no endpoint, task-role creds (default chain), SigV4, Terraform
+            # owns the bucket so we don't manage it.
+            _backend = MinioStorage(bucket, endpoint_url=None, region=region,
+                                    manage_bucket=False)
         else:
             _backend = LocalStorage()
     return _backend
