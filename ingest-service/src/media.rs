@@ -51,7 +51,33 @@ pub fn perceptual_distance(a: &str, b: &str) -> Result<u32, String> {
 }
 
 pub fn validate_image(bytes: &[u8], filename: &str) -> IngestReport {
+    validate_image_limited(
+        bytes,
+        filename,
+        crate::limits::Limits::default().max_image_pixels,
+    )
+}
+
+pub fn validate_image_limited(bytes: &[u8], filename: &str, max_pixels: u64) -> IngestReport {
+    use std::io::Cursor;
     let ds_hash = dataset_hash(bytes);
+
+    // Pixel-bomb guard: read dimensions from the header (no full decode) and
+    // reject before allocating a giant pixel buffer.
+    match image::ImageReader::new(Cursor::new(bytes)).with_guessed_format() {
+        Ok(reader) => match reader.into_dimensions() {
+            Ok((w, h)) => {
+                if (w as u64) * (h as u64) > max_pixels {
+                    return reject(
+                        ds_hash,
+                        format!("image {w}x{h} exceeds pixel limit {max_pixels}"),
+                    );
+                }
+            }
+            Err(e) => return reject(ds_hash, format!("unreadable image header: {e}")),
+        },
+        Err(e) => return reject(ds_hash, format!("unreadable image: {e}")),
+    }
 
     let img = match image::load_from_memory(bytes) {
         Ok(img) => img,

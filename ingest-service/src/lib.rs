@@ -7,16 +7,34 @@
 
 pub mod contract;
 pub mod keys;
+pub mod limits;
 pub mod media;
 pub mod tabular;
 
 pub use contract::{IngestReport, IngestRequest, IngestStatus, Spec};
+pub use limits::Limits;
 pub use tabular::validate_dataset;
 
-/// Dispatch a job by file type: images → media path, else tabular.
+/// Dispatch a job by file type, applying env-configured file-safety limits.
 pub fn ingest(bytes: &[u8], filename: &str, spec: &Spec) -> IngestReport {
+    ingest_limited(bytes, filename, spec, &Limits::from_env())
+}
+
+/// Dispatch with explicit limits (deterministic — used by tests).
+pub fn ingest_limited(bytes: &[u8], filename: &str, spec: &Spec, limits: &Limits) -> IngestReport {
+    // Cheap oversize gate first — never load a hostile file into memory.
+    if bytes.len() > limits.max_bytes {
+        return limits::rejected(
+            bytes,
+            format!(
+                "upload {} bytes exceeds limit {}",
+                bytes.len(),
+                limits.max_bytes
+            ),
+        );
+    }
     if media::is_image(filename) {
-        media::validate_image(bytes, filename)
+        media::validate_image_limited(bytes, filename, limits.max_image_pixels)
     } else {
         validate_dataset(bytes, filename, spec)
     }
