@@ -97,8 +97,16 @@ fn float_typed_key_renders_like_python_str() {
 fn rejects_rows_missing_required_columns() {
     let spec = Spec {
         columns: vec![
-            Column { name: "id".into(), col_type: "integer".into(), required: true },
-            Column { name: "note".into(), col_type: "string".into(), required: false },
+            Column {
+                name: "id".into(),
+                col_type: "integer".into(),
+                required: true,
+            },
+            Column {
+                name: "note".into(),
+                col_type: "string".into(),
+                required: false,
+            },
         ],
         unique_key: Some(vec!["id".into()]),
     };
@@ -111,7 +119,11 @@ fn rejects_rows_missing_required_columns() {
 #[test]
 fn jsonl_parses_and_validates() {
     let spec = Spec {
-        columns: vec![Column { name: "email".into(), col_type: "string".into(), required: true }],
+        columns: vec![Column {
+            name: "email".into(),
+            col_type: "string".into(),
+            required: true,
+        }],
         unique_key: Some(vec!["email".into()]),
     };
     let jsonl = b"{\"email\": \"a@b.com\"}\n{\"email\": \"a@b.com\"}\n{\"email\": \"c@d.com\"}\n";

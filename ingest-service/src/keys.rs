@@ -17,7 +17,10 @@ use sha2::{Digest, Sha256};
 pub fn normalize_value(v: &str) -> String {
     // `.strip()` + collapse `\s+` == split on unicode whitespace and rejoin.
     // Lowercasing first matches Python order (lowercasing never alters whitespace).
-    v.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ")
+    v.to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Reproduce Python's `repr()` of a single `str`.

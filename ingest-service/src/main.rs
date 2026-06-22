@@ -10,9 +10,11 @@
 //! paths share the same `validate_dataset` core, so a 2 GB video never blocks a
 //! request. Either way: Rust computes, Python settles.
 
-use axum::{extract::Json, http::StatusCode, response::IntoResponse, routing::get, routing::post, Router};
+use axum::{
+    extract::Json, http::StatusCode, response::IntoResponse, routing::get, routing::post, Router,
+};
 use base64::Engine;
-use rowbound_ingest::{validate_dataset, IngestRequest, Spec};
+use rowbound_ingest::{ingest as run_ingest, IngestRequest};
 use serde_json::json;
 
 #[tokio::main]
@@ -34,7 +36,11 @@ async fn ingest(Json(req): Json<IngestRequest>) -> impl IntoResponse {
         Some(b64) => match base64::engine::general_purpose::STANDARD.decode(b64) {
             Ok(b) => b,
             Err(e) => {
-                return (StatusCode::BAD_REQUEST, Json(json!({"error": format!("bad base64: {e}")}))).into_response()
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"error": format!("bad base64: {e}")})),
+                )
+                    .into_response()
             }
         },
         None => {
@@ -43,11 +49,11 @@ async fn ingest(Json(req): Json<IngestRequest>) -> impl IntoResponse {
                 StatusCode::BAD_REQUEST,
                 Json(json!({"error": "content_b64 required on the synchronous /ingest path (s3_key is for the queue path)"})),
             )
-                .into_response()
+                .into_response();
         }
     };
-    let spec = req.spec.clone().unwrap_or_else(Spec::default);
-    let report = validate_dataset(&bytes, &req.filename, &spec);
+    let spec = req.spec.clone().unwrap_or_default();
+    let report = run_ingest(&bytes, &req.filename, &spec);
     (StatusCode::OK, Json(report)).into_response()
 }
 

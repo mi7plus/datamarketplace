@@ -19,6 +19,10 @@ sha2 = "0.10"
 hex = "0.4"
 csv = "1"
 base64 = "0.22"
+# Media (P3) — pure-Rust image decode + perceptual (DCT pHash) hashing. No ffmpeg
+# needed for the image path, so it stays `cargo test`-verifiable.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif"] }
+image_hasher = "2"
 # Binary-only (HTTP). The lib (compute) stays async-free so `cargo test` is fast.
 axum = "0.7"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

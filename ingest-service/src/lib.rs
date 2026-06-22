@@ -7,7 +7,17 @@
 
 pub mod contract;
 pub mod keys;
+pub mod media;
 pub mod tabular;
 
 pub use contract::{IngestReport, IngestRequest, IngestStatus, Spec};
 pub use tabular::validate_dataset;
+
+/// Dispatch a job by file type: images → media path, else tabular.
+pub fn ingest(bytes: &[u8], filename: &str, spec: &Spec) -> IngestReport {
+    if media::is_image(filename) {
+        media::validate_image(bytes, filename)
+    } else {
+        validate_dataset(bytes, filename, spec)
+    }
+}

@@ -18,8 +18,8 @@ moves funds. Python takes the `key_hashes` and does the locked allocation / cap 
 |---|---|---|
 | P0 contract + skeleton | ✅ | `axum` `/health` + sync `POST /ingest`; serde contract in `contract.rs`. |
 | P1 tabular port + parity | ✅ | Port of `app/ingest.py`; **byte-identical hash parity** with Python proven (`tests/parity.rs` + live shadow check). Cut-over NOT done — Python ingest is still the live path. |
-| P2 staging anti-join cut-over | ⛔ deferred | Needs the `submission_key_staging` table + the Python `EXCEPT` anti-join + the `/internal/ingest-result` callback. Touches the live path — do behind a flag with shadow parity first. |
-| P3 media | ⛔ deferred | image/audio validation, transcode (ffmpeg), perceptual hashing. Net new. |
+| P2 staging anti-join + callback | ✅ Python side | `submission_key_staging` table + migration, the `EXCEPT` anti-join in `accept_submission` (flag `USE_STAGING_DEDUP`, in-Python fallback default), and `POST /internal/ingest-result` (idempotent, secret-gated) all landed in the backend with tests. Remaining: the Rust worker bulk-`COPY` into staging + the queue wiring (P4), and flipping the flag on after a shadow window. |
+| P3 media (first cut) | ✅ images | `media.rs`: image validate (format/dimensions/corruption) + metadata + gradient perceptual hash + **exact-file dedup** (`key_hashes=[dataset_hash]`, so it flows through the same anti-join). `ingest()` dispatches images vs tabular by extension. Tests cover validation, exact-file dedup, corruption reject, and near-dup < far-dup. Deferred: audio fingerprint + ffmpeg transcode/thumbnail (external binaries), and the perceptual **near-dup ANN search** (BK-tree/pgvector — a different data structure, deliberate follow-up). |
 | P4 deploy | partial | Rust CI job added (`.github/workflows/ci.yml`). ECR/Fargate/SQS/IAM = the AWS plan. |
 | P5 hardening/obs | ⛔ deferred | DLQ, metrics, decompression-bomb caps. |
 

@@ -79,7 +79,12 @@ fn neutralize(v: &Value) -> Value {
 fn validate_row(
     row: &Map<String, Value>,
     spec: &Spec,
-) -> (bool, Map<String, Value>, std::collections::HashMap<String, String>, Vec<String>) {
+) -> (
+    bool,
+    Map<String, Value>,
+    std::collections::HashMap<String, String>,
+    Vec<String>,
+) {
     let mut parsed = Map::new();
     let mut key_strs = std::collections::HashMap::new();
     let mut errors = Vec::new();
@@ -214,10 +219,8 @@ pub fn validate_dataset(bytes: &[u8], filename: &str, spec: &Spec) -> IngestRepo
         null_rate = round4(1.0 - (filled as f64 / cells as f64));
     }
     let completeness = 1.0 - null_rate;
-    let quality_score = round4(
-        (conformance_rate * (1.0 - duplicate_density) * completeness)
-            .clamp(0.0, 1.0),
-    );
+    let quality_score =
+        round4((conformance_rate * (1.0 - duplicate_density) * completeness).clamp(0.0, 1.0));
 
     let mut report = json!({
         "total_rows": total_rows,
@@ -287,7 +290,10 @@ fn parse_csv(bytes: &[u8]) -> Result<Vec<Map<String, Value>>, String> {
         let rec = rec.map_err(|e| e.to_string())?;
         let mut m = Map::new();
         for (i, h) in headers.iter().enumerate() {
-            m.insert(h.clone(), Value::String(rec.get(i).unwrap_or("").to_string()));
+            m.insert(
+                h.clone(),
+                Value::String(rec.get(i).unwrap_or("").to_string()),
+            );
         }
         out.push(m);
     }
