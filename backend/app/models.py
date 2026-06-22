@@ -236,6 +236,25 @@ class AcceptedKey(Base):
     )
 
 
+class SubmissionKeyStaging(Base):
+    """
+    Per-submission staging of normalized key hashes (Rust ingest plan P2).
+    The Rust service bulk-writes a submission's key hashes here; the locked
+    allocation step then computes `creditable = staging EXCEPT accepted_keys`
+    as a SQL anti-join (ordered by `ordinal` to preserve submission order, capped
+    at remaining), replacing the in-Python set intersection. Staging only — never
+    a money/lifecycle table; Python remains the sole writer to the core schema.
+    """
+    __tablename__ = "submission_key_staging"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    submission_id = Column(UUID(as_uuid=True), ForeignKey("submissions.id"), nullable=False)
+    ordinal = Column(Integer, nullable=False)      # submission order, for the cap
+    key_hash = Column(String(64), nullable=False)  # SHA-256 hex of the normalized key tuple
+    __table_args__ = (
+        Index("idx_submission_key_staging_submission", "submission_id"),
+    )
+
+
 class ListingStatus(str, enum.Enum):
     ACTIVE = "active"
     PAUSED = "paused"

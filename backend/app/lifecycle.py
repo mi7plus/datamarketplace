@@ -14,6 +14,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models import DataRequest, Submission, RequestStatus, SubmissionStatus, AcceptedKey
+from app.staging_dedup import use_staging_dedup, creditable_via_staging
 
 
 # ---------------------------------------------------------------------------
@@ -156,14 +157,20 @@ def accept_submission(
     # order and filtering by membership fixes both.
     creditable: list[str] | None = None
     if getattr(submission, "key_hashes", None):
-        already_accepted = {
-            row.key_hash
-            for row in db.query(AcceptedKey)
-            .filter(AcceptedKey.request_id == str(request.id))
-            .all()
-        }
-        new_hashes = [h for h in submission.key_hashes if h not in already_accepted]
-        creditable = new_hashes[:remaining]
+        if use_staging_dedup():
+            # P2: compute the overlap-and-cap as a SQL anti-join in Postgres
+            # (staging EXCEPT accepted_keys), not an in-Python set intersection.
+            creditable = creditable_via_staging(db, submission, request, remaining)
+        else:
+            # Fallback (default): the proven in-Python path.
+            already_accepted = {
+                row.key_hash
+                for row in db.query(AcceptedKey)
+                .filter(AcceptedKey.request_id == str(request.id))
+                .all()
+            }
+            new_hashes = [h for h in submission.key_hashes if h not in already_accepted]
+            creditable = new_hashes[:remaining]
         accepted = len(creditable)
     else:
         accepted = min(submission.validated_amount, remaining)
