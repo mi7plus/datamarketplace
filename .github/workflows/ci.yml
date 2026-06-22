@@ -85,6 +85,27 @@ jobs:
         working-directory: backend
         run: python -m pytest tests/ -q
 
+  ingest-service:
+    name: Ingest service — cargo fmt/clippy/test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ingest-service
+      - name: Format
+        working-directory: ingest-service
+        run: cargo fmt --check
+      - name: Clippy
+        working-directory: ingest-service
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test (incl. Python-parity hashes)
+        working-directory: ingest-service
+        run: cargo test
+
   frontend:
     name: Frontend — Nuxt build
     runs-on: ubuntu-latest

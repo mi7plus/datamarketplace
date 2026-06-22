@@ -34,3 +34,6 @@ frontend/.data/
 infra/.bin/
 infra/.terraform/
 infra/.terraform.lock.hcl
+
+# Rust build artifacts
+ingest-service/target/
