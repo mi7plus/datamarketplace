@@ -12,6 +12,7 @@ from app.listings import router as listings_router, purchases_router
 from app.collect import router as collect_router
 from app.metrics import router as metrics_router
 from app.contact import router as contact_router
+from app.internal import router as internal_router
 from dotenv import load_dotenv
 from pathlib import Path
 import os
@@ -59,6 +60,8 @@ app.include_router(purchases_router, prefix="/purchases", tags=["purchases"])
 app.include_router(collect_router, prefix="/collect", tags=["collect"])
 app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
 app.include_router(contact_router, prefix="/contact", tags=["contact"])
+# Internal-only: Rust ingest result callback. Not exposed on the public gateway.
+app.include_router(internal_router, prefix="/internal", tags=["internal"])
 
 
 # Background auto-release sweep: pays out ACCEPTED submissions whose acceptance

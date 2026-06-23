@@ -49,6 +49,21 @@ export const useApi = () => {
 
     const get = (url: string) => request(url, { method: 'GET' })
 
+    // Fetch a binary body (e.g. the decrypt-and-stream download for envelope-
+    // encrypted datasets, E5) as a Blob, with the same auth + 401-refresh-retry.
+    const getBlob = async (url: string, _retried = false): Promise<Blob> => {
+        const res = await fetch(`${base}${url}`, {
+            method: 'GET',
+            credentials: 'include',
+            headers: authHeaders(),
+        })
+        if (res.status === 401 && !_retried) {
+            if (await refreshOnce()) return getBlob(url, true)
+        }
+        if (!res.ok) throw await toError(res, url)
+        return res.blob()
+    }
+
     const post = (url: string, data: any) =>
         request(url, {
             method: 'POST',
@@ -61,5 +76,5 @@ export const useApi = () => {
     const postForm = (url: string, form: FormData) =>
         request(url, { method: 'POST', body: form })
 
-    return { get, post, postForm }
+    return { get, getBlob, post, postForm }
 }

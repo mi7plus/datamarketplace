@@ -100,14 +100,56 @@ class TestDownloadGate:
 # ---------------------------------------------------------------------------
 
 class TestPresignedURLTTL:
-    def test_default_ttl_is_one_hour(self):
-        assert PRESIGNED_URL_TTL_SECONDS == 3600
+    def test_default_ttl_is_minutes_not_hours(self):
+        # E3: the presigned URL is the access grant — minutes, not hours.
+        assert PRESIGNED_URL_TTL_SECONDS == 300
+
+    def test_clamp_to_ceiling(self):
+        # A misconfigured long TTL is clamped to the ceiling, not honoured.
+        from app.storage import _clamp_ttl, PRESIGNED_URL_TTL_MAX
+        assert _clamp_ttl(99999) == PRESIGNED_URL_TTL_MAX
+        assert _clamp_ttl(120) == 120
+        assert _clamp_ttl(0) == 1
 
     def test_env_override(self, monkeypatch):
-        monkeypatch.setenv("PRESIGNED_URL_TTL_SECONDS", "1800")
+        monkeypatch.setenv("PRESIGNED_URL_TTL_SECONDS", "240")
         import importlib, app.storage
         importlib.reload(app.storage)
-        assert app.storage.PRESIGNED_URL_TTL_SECONDS == 1800
+        assert app.storage.PRESIGNED_URL_TTL_SECONDS == 240
         # Restore default
-        monkeypatch.setenv("PRESIGNED_URL_TTL_SECONDS", "3600")
+        monkeypatch.delenv("PRESIGNED_URL_TTL_SECONDS", raising=False)
         importlib.reload(app.storage)
+
+
+# ---------------------------------------------------------------------------
+# Envelope encryption at rest (E5) — LocalStorage round-trip
+# ---------------------------------------------------------------------------
+
+class TestEnvelopeAtRest:
+    def test_encrypted_save_is_ciphertext_on_disk_but_plaintext_on_read(
+        self, tmp_path, monkeypatch
+    ):
+        import app.storage as storage_module
+        import app.crypto as crypto
+        monkeypatch.setattr(storage_module, "UPLOAD_DIR", tmp_path)
+        # Force envelope encryption on with the dev LocalKeyProvider.
+        monkeypatch.setenv("ENVELOPE_ENCRYPTION_ENABLED", "true")
+        monkeypatch.setattr(crypto, "_provider", None)  # reset singleton
+
+        ls = LocalStorage()
+        payload = b"name,ssn\nAlice,123-45-6789\n"
+        ls.save("secret/data.csv", payload, encrypt=True)
+
+        raw = (tmp_path / "secret/data.csv").read_bytes()
+        assert raw[:4] == crypto.MAGIC          # ciphertext on disk
+        assert b"123-45-6789" not in raw         # PII not recoverable from object
+        assert ls.is_encrypted_at_rest("secret/data.csv") is True
+        assert ls.read("secret/data.csv") == payload   # transparent decrypt
+
+    def test_plain_save_is_unencrypted(self, tmp_path, monkeypatch):
+        import app.storage as storage_module
+        monkeypatch.setattr(storage_module, "UPLOAD_DIR", tmp_path)
+        ls = LocalStorage()
+        ls.save("plain/data.csv", b"a,b\n1,2\n", encrypt=False)
+        assert ls.is_encrypted_at_rest("plain/data.csv") is False
+        assert ls.read("plain/data.csv") == b"a,b\n1,2\n"

@@ -99,9 +99,16 @@ cd backend
 | `lifecycle.py` | State machine functions for `DataRequest` and `Submission` — all status changes go through here |
 | `seed.py` | Seeds `licenses` table with standard license options — run once |
 | `ingest.py` | CSV/JSONL validation engine: schema check, count, dedup, sample, SHA-256 hash |
-| `storage.py` | Storage abstraction (`LocalStorage` now, `MinioStorage` in Phase 6) — `get_storage()` singleton |
+| `storage.py` | Storage abstraction (`LocalStorage` now, `MinioStorage` in Phase 6) — `get_storage()` singleton; SSE-KMS on puts + transparent envelope encryption (E2/E5) |
+| `crypto.py` | Envelope encryption for sensitive datasets (E5): `KmsKeyProvider` + `LocalKeyProvider` dev fallback behind `get_key_provider()`; AES-256-GCM `encrypt`/`decrypt`. See `KEY_MANAGEMENT.md` |
 | `payments.py` | `PaymentProvider` ABC; `FakePaymentProvider` (default) + `StripePaymentProvider`; `append_ledger`; `ledger_balance`; `get_payment_provider()` singleton |
 | `webhooks.py` | `POST /webhooks/stripe` — signature-verified Stripe webhook handler |
+| `ingest_client.py` | Client + P1 SHADOW-compare harness for the Rust ingest service; `INGEST_SHADOW_ENABLED`/`INGEST_RUST_ENABLED` flags. See `../rust-ingest/` |
+| `internal.py` | `POST /internal/ingest-result` — idempotent, token-gated callback the Rust workers POST to; Python stays the single writer to the core schema |
+
+### Rust ingest service (`rust-ingest/`)
+
+Standalone Rust service for heavy per-record + media work (validate/hash/dedup-hash/perceptual-hash), per `rowbound-rust-ingest-service-plan.md`. **Rust computes, Python settles** — it never writes money/lifecycle tables; it stages normalized key hashes to `submission_key_staging` (COPY) and returns a deterministic report. `keys.rs` is byte-parity with `app/keys.py` (golden vectors shared with `tests/test_rust_parity.py`). Deploy: `RUST_INGEST_DEPLOY.md`. **Not yet compiled** — see `rust-ingest/README.md`.
 
 **Key design decisions:**
 - All models inherit `BaseModel` which provides a UUID primary key, `created_at`, `updated_at`, `is_deleted`, and `version`.

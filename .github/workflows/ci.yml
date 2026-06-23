@@ -20,10 +20,12 @@ jobs:
           echo "OK — no tracked .env files."
       - name: Fail on obvious committed secrets
         run: |
-          # Stripe live/restricted keys, AWS access keys, PEM private keys.
-          if git grep -nE '(sk_live_|rk_live_|AKIA[0-9A-Z]{16}|-----BEGIN (RSA |EC )?PRIVATE KEY-----)' \
+          # Stripe live/restricted keys, AWS access keys, PEM private keys, and
+          # raw key material (E6: CI blocks committed keys). PKCS#8 + OpenSSH +
+          # AWS secret-access-key assignments are added beyond the PEM RSA/EC forms.
+          if git grep -nE '(sk_live_|rk_live_|AKIA[0-9A-Z]{16}|-----BEGIN ((RSA |EC |OPENSSH |PGP )?PRIVATE KEY|ENCRYPTED PRIVATE KEY)-----|aws_secret_access_key\s*=\s*[A-Za-z0-9/+=]{40}|ENVELOPE_LOCAL_MASTER_KEY\s*=\s*\S)' \
                -- ':!*.example' ':!*lock*' ':!.github/workflows/*'; then
-            echo "::error::Possible committed secret detected (see matches above)."
+            echo "::error::Possible committed secret / key material detected (see matches above)."
             exit 1
           fi
           echo "OK — no obvious secrets detected."
@@ -84,6 +86,27 @@ jobs:
       - name: Run tests
         working-directory: backend
         run: python -m pytest tests/ -q
+
+  rust-ingest:
+    name: Rust ingest — fmt + clippy + test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust-ingest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-ingest
+      - name: Format check
+        run: cargo fmt --all -- --check
+      - name: Clippy (deny warnings)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --all
 
   frontend:
     name: Frontend — Nuxt build
