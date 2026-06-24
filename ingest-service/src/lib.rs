@@ -10,6 +10,7 @@ pub mod contract;
 pub mod keys;
 pub mod limits;
 pub mod media;
+pub mod neardup;
 pub mod tabular;
 #[cfg(feature = "queue")]
 pub mod worker;
