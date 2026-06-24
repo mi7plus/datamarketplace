@@ -1,92 +1,103 @@
 # app/internal.py
 #
-# Internal callback for the Rust ingest service (Rust ingest plan, async path).
-# The Rust worker processes a file off the queue and POSTs its report here; Python
-# flips the submission to VALIDATED / REJECTED_INVALID and populates the dedup
-# staging table. Python remains the SOLE writer to the core schema — Rust never
-# writes money/lifecycle rows.
+# Internal callback surface for the Rust ingest service (async path).
 #
-# Auth: a shared secret in the X-Internal-Secret header (INGEST_CALLBACK_SECRET).
-# If the secret is unset the endpoint is disabled (503) — it's an internal,
-# VPC-only surface, never public.
+# The Rust worker processes a job and POSTs its report here; Python — the single
+# writer to the core schema — flips the submission to VALIDATED / REJECTED_INVALID
+# inside its own transaction. Idempotent: a report for an already-processed
+# submission is a no-op, so at-least-once SQS delivery + retries are safe.
 #
-# Idempotency: the job is keyed by submission_id + content_hash. The callback is a
-# no-op if the submission has already left PENDING, so re-delivery is safe.
+# Gated by a shared secret (INGEST_INTERNAL_TOKEN). This router is NOT mounted on
+# the public API gateway in production — internal VPC only.
 
-import hmac
 import os
+import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.lifecycle import transition_submission
-from app.models import Submission, SubmissionStatus, SubmissionKeyStaging
+from app.models import Submission, SubmissionStatus
+from app.lifecycle import validate_submission
 
-router = APIRouter(prefix="/internal", tags=["internal"])
-
-
-class IngestReportIn(BaseModel):
-    status: str                       # "VALIDATED" | "REJECTED_INVALID"
-    validated_amount: int = 0
-    dataset_hash: str | None = None
-    quality_score: float = 0.0
-    sample: list[dict] = Field(default_factory=list)
-    key_hashes: list[str] = Field(default_factory=list)
-    validation_report: dict = Field(default_factory=dict)
-    errors: list[str] = Field(default_factory=list)
+logger = logging.getLogger("internal")
+router = APIRouter()
 
 
 class IngestResultIn(BaseModel):
     submission_id: str
-    content_hash: str | None = None   # idempotency key component (== dataset_hash)
-    report: IngestReportIn
+    status: str | None = None            # "VALIDATED" | "REJECTED_INVALID"
+    validated_amount: int = 0
+    dataset_hash: str | None = None
+    total_rows: int = 0
+    rejected_rows: int = 0
+    duplicate_rows: int = 0
+    quality_score: float = 0.0
+    stats: dict | None = None
+    sample: list | None = None
+    key_hash_ref: str | None = None
+    key_hash_count: int = 0
+    media_meta: dict | None = None
+    perceptual_hashes: dict | None = None
+    errors: list[str] | None = None
 
 
-def _require_secret(x_internal_secret: str | None = Header(default=None)) -> None:
-    secret = os.getenv("INGEST_CALLBACK_SECRET")
-    if not secret:
-        raise HTTPException(status_code=503, detail="Internal ingest callback is disabled")
-    if not x_internal_secret or not hmac.compare_digest(x_internal_secret, secret):
-        raise HTTPException(status_code=401, detail="Invalid internal secret")
+def _require_token(x_internal_token: str | None) -> None:
+    expected = os.getenv("INGEST_INTERNAL_TOKEN", "")
+    if not expected or x_internal_token != expected:
+        raise HTTPException(status_code=401, detail="unauthorized")
 
 
 @router.post("/ingest-result")
 def ingest_result(
     body: IngestResultIn,
+    x_internal_token: str | None = Header(default=None),
     db: Session = Depends(get_db),
-    _: None = Depends(_require_secret),
 ):
-    sub = db.query(Submission).filter(Submission.id == body.submission_id).first()
-    if not sub:
-        raise HTTPException(status_code=404, detail="Submission not found")
+    _require_token(x_internal_token)
 
-    # Idempotent: only the first report for a PENDING submission takes effect.
-    if sub.status != SubmissionStatus.PENDING:
-        return {"status": "already_processed", "submission_status": sub.status.value}
-
-    report = body.report
-    sub.validated_amount = report.validated_amount
-    sub.dataset_hash = report.dataset_hash
-    sub.validation_report = report.validation_report
-    sub.quality_score = report.quality_score
-    sub.key_hashes = report.key_hashes
-
-    # Populate the dedup staging table (the allocation step reads from here) —
-    # UNLESS the Rust worker already bulk-COPYed it on the async path. Guarding on
-    # existing rows lets worker-COPY and this callback compose without duplicates.
-    already_staged = (
-        db.query(SubmissionKeyStaging.id)
-        .filter(SubmissionKeyStaging.submission_id == sub.id)
+    submission = (
+        db.query(Submission)
+        .filter(Submission.id == body.submission_id, Submission.is_deleted == False)  # noqa: E712
         .first()
     )
-    if not already_staged:
-        for i, kh in enumerate(report.key_hashes):
-            db.add(SubmissionKeyStaging(submission_id=sub.id, ordinal=i, key_hash=kh))
+    if not submission:
+        raise HTTPException(status_code=404, detail="submission not found")
 
-    valid = report.status == "VALIDATED" and report.validated_amount > 0
-    new_status = SubmissionStatus.VALIDATED if valid else SubmissionStatus.REJECTED_INVALID
-    transition_submission(sub, new_status, db, commit=True)
+    # Idempotency: only a still-PENDING submission gets transitioned. A repeat
+    # callback (SQS redelivery / reprocess) is a no-op.
+    if submission.status != SubmissionStatus.PENDING:
+        return {"status": "noop", "current": str(submission.status)}
 
-    return {"status": "ok", "submission_status": new_status.value, "validated_amount": sub.validated_amount}
+    report = {
+        "total_rows": body.total_rows,
+        "conforming_rows": body.validated_amount,
+        "rejected_rows": body.rejected_rows,
+        "duplicate_rows": body.duplicate_rows,
+        "sample": body.sample or [],
+        "stats": body.stats or {},
+        "key_hash_ref": body.key_hash_ref,
+        "media_meta": body.media_meta,
+        "perceptual_hashes": body.perceptual_hashes,
+        "errors": body.errors or [],
+        "engine": "rust",
+    }
+
+    if body.dataset_hash:
+        submission.dataset_hash = body.dataset_hash
+    if body.quality_score:
+        submission.quality_score = body.quality_score
+
+    # validate_submission picks VALIDATED vs REJECTED_INVALID from the amount, so
+    # a corrupt-media (amount 0) or REJECTED_INVALID report both land correctly.
+    amount = 0 if body.status == "REJECTED_INVALID" else body.validated_amount
+    validate_submission(
+        submission=submission,
+        validated_amount=amount,
+        validation_report=report,
+        db=db,
+    )
+    outcome = "validated" if amount > 0 else "rejected"
+    logger.info("ingest-result %s sub=%s amount=%s", outcome, body.submission_id, amount)
+    return {"status": outcome}

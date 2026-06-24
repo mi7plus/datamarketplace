@@ -22,28 +22,6 @@ frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 app = FastAPI(title="DataMarketplace API")
 
-
-# Liveness probe for the ALB target group + Docker HEALTHCHECK. Dependency-free
-# (no DB call) so a transient DB blip doesn't flap the load balancer.
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
-
-
-# Deep readiness check — NOT wired to the load balancer. Use for diagnostics only.
-@app.get("/health/db")
-def health_db():
-    from sqlalchemy import text
-    from app.db import SessionLocal
-    try:
-        with SessionLocal() as db:
-            db.execute(text("SELECT 1"))
-        return {"status": "ok", "db": "up"}
-    except Exception:
-        from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=503, content={"status": "error", "db": "down"})
-
-
 # Allow CORS
 origins = [
     frontend_url,
@@ -82,7 +60,8 @@ app.include_router(purchases_router, prefix="/purchases", tags=["purchases"])
 app.include_router(collect_router, prefix="/collect", tags=["collect"])
 app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
 app.include_router(contact_router, prefix="/contact", tags=["contact"])
-app.include_router(internal_router)  # /internal/* — router carries its own prefix
+# Internal-only: Rust ingest result callback. Not exposed on the public gateway.
+app.include_router(internal_router, prefix="/internal", tags=["internal"])
 
 
 # Background auto-release sweep: pays out ACCEPTED submissions whose acceptance

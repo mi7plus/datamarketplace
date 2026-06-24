@@ -1,0 +1,57 @@
+[package]
+name = "rowbound-ingest"
+version = "0.1.0"
+edition = "2021"
+description = "Rowbound ingest/dedup/media service — stateless heavy computation; Python settles."
+license = "proprietary"
+
+# Rust computes, Python settles. This crate NEVER writes money/lifecycle tables.
+# sqlx access is scoped to the submission_key_staging table only (see staging.rs).
+
+[[bin]]
+name = "rowbound-ingest"
+path = "src/main.rs"
+
+[dependencies]
+# Runtime / HTTP
+tokio = { version = "1.40", features = ["full"] }
+axum = "0.7"
+
+# Serde / contract
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# AWS
+aws-config = { version = "1.5", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1.50"
+aws-sdk-sqs = "1.45"
+
+# Tabular
+csv = "1.3"
+sha2 = "0.10"          # parity: dataset_hash + key_hash must match Python sha256
+hex = "0.4"
+
+# Staging writes (staging table ONLY)
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "tls-rustls"] }
+
+# Media — images + perceptual hashing (aHash is hand-rolled on `image`, see
+# media/image.rs, to avoid the img_hash/image version conflict)
+image = "0.25"
+
+# Media — audio decode (fingerprint scaffolding)
+symphonia = { version = "0.5", features = ["all"] }
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+metrics = "0.23"
+metrics-exporter-prometheus = "0.15"
+
+# Errors / misc
+thiserror = "1"
+anyhow = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"

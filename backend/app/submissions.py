@@ -3,7 +3,9 @@ import os
 import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
+import io
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
+from fastapi.responses import StreamingResponse
 from app import audit
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -135,8 +137,13 @@ async def create_submission(
         spec=data_request.spec,
     )
 
+    # Envelope-encrypt at rest (E5) when the dataset carries personal data, so a
+    # leaked object yields ciphertext. read()/delivery transparently decrypt for
+    # the authorized roles (the deliberate carve-out that keeps the dedup/validate
+    # moat working). Standard SSE-KMS covers the non-sensitive rest.
+    sensitive = (result.pii_report or {}).get("risk") in ("high", "medium")
     storage_key = f"{request_id}/{current_user.id}/{file.filename}"
-    storage_location = get_storage().save(storage_key, file_bytes)
+    storage_location = get_storage().save(storage_key, file_bytes, encrypt=sensitive)
 
     # Store a timestamped warranty affirmation in owner_signature
     warranty_sig = (
@@ -172,6 +179,22 @@ async def create_submission(
         validation_report={**result.validation_report, "sample": result.sample},
         db=db,
     )
+
+    # P1 SHADOW mode: run the Rust ingest service on the same file and log any
+    # parity divergence. Python stays authoritative; this never affects the
+    # response and never raises (no-op unless INGEST_SHADOW_ENABLED).
+    try:
+        from app.ingest_client import shadow_compare
+        shadow_compare(
+            result,
+            submission_id=str(submission.id),
+            s3_key=storage_location,
+            filename=file.filename or "upload",
+            spec=data_request.spec,
+            content_hash=result.dataset_hash,
+        )
+    except Exception:
+        pass
 
     return _serialize_submission(submission)
 
@@ -651,21 +674,10 @@ def get_sample(
     }
 
 
-@router.get("/{submission_id}/download")
-def download(
-    submission_id: str,
-    request: Request = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Issue a short-lived pre-signed URL for the full dataset.
-    ONLY issued when submission is PAID.
-    Never issued for PENDING / VALIDATED / REJECTED* — buyer must pay first.
-    """
-    submission = _get_submission_or_404(submission_id, db)
-
-    # Gate: only the requester who paid can download
+def _assert_download_allowed(submission: Submission, current_user: User, db: Session) -> DataRequest:
+    """Shared gate for both delivery paths (presigned + decrypt-stream). Enforces
+    buyer ownership, PAID/accepted status, quarantine, takedown expiry, and the
+    per-submission download_limit (E3). Returns the parent DataRequest."""
     data_request = db.query(DataRequest).filter(DataRequest.id == str(submission.request_id)).first()
     if not data_request:
         raise HTTPException(status_code=404, detail="Request not found")
@@ -673,10 +685,8 @@ def download(
 
     # Auto-release check: if window has elapsed and no dispute, release now (lazy).
     # Shares one helper with /claim and the sweep so the rules can't drift.
-    # (_release_and_pay commits, expiring `submission`; its status is re-read below.)
     _auto_release_if_due(submission, db)
 
-    # Status gate — full file for PAID or during the acceptance window (buyer verifying)
     allowed_statuses = (SubmissionStatus.PAID, SubmissionStatus.ACCEPTED, SubmissionStatus.PARTIALLY_ACCEPTED)
     if submission.status not in allowed_statuses:
         raise HTTPException(
@@ -702,29 +712,104 @@ def download(
     if submission.access_expiry and submission.access_expiry < datetime.utcnow():
         raise HTTPException(status_code=410, detail="This dataset has been taken down and is no longer available")
 
-    url = get_storage().presigned_url(submission.storage_location, filename=submission.content_link)
+    # E3: honour download_limit. 0 = unlimited (the default). Once the limit is
+    # reached the access grant is spent — no more URLs / streams are issued.
+    if submission.download_limit and submission.download_limit > 0 and \
+            (submission.download_count or 0) >= submission.download_limit:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Download limit reached ({submission.download_limit}).",
+        )
 
+    return data_request
+
+
+def _record_download(submission: Submission, current_user: User, request: Request, db: Session) -> None:
+    """Audit + count the grant. Best-effort access_expiry refresh keeps the
+    takedown gate's clock current."""
     audit.record(db, "download", actor_id=current_user.id, ip=audit.client_ip(request),
                  object_type="submission", object_id=submission.id)
-
-    # Record download in access_expiry (best-effort — not blocking)
     try:
-        from datetime import timedelta
+        submission.download_count = (submission.download_count or 0) + 1
         submission.access_expiry = datetime.utcnow() + timedelta(
-            seconds=int(os.getenv("PRESIGNED_URL_TTL_SECONDS", "3600"))
+            seconds=int(os.getenv("PRESIGNED_URL_TTL_SECONDS", "300"))
         )
         db.commit()
     except Exception:
-        pass
+        db.rollback()
+
+
+@router.get("/{submission_id}/download")
+def download(
+    submission_id: str,
+    request: Request = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Hand the paying buyer the full dataset. ONLY for PAID / accepted submissions.
+
+    For objects stored encrypted at rest (E5) the presigned URL would be useless
+    ciphertext, so the response points at the decrypt-and-stream sub-endpoint
+    instead; otherwise a short-lived (E3) presigned URL is returned.
+    """
+    submission = _get_submission_or_404(submission_id, db)
+    _assert_download_allowed(submission, current_user, db)
+
+    manifest = _compliance_manifest(submission, db)
+
+    # Envelope-encrypted object: the bytes in storage are ciphertext, so we can't
+    # presign them. Direct the client to the authenticated stream endpoint, which
+    # decrypts in memory (the carve-out) and serves plaintext. The count is taken
+    # there, when the bytes actually flow.
+    if get_storage().is_encrypted_at_rest(submission.storage_location):
+        return {
+            "url": None,
+            "streamed": True,
+            "download_path": f"/submissions/{submission.id}/download/stream",
+            "submission_id": str(submission.id),
+            "filename": submission.content_link,
+            "manifest": manifest,
+        }
+
+    ttl = int(os.getenv("PRESIGNED_URL_TTL_SECONDS", "300"))
+    url = get_storage().presigned_url(submission.storage_location, filename=submission.content_link)
+    _record_download(submission, current_user, request, db)
 
     return {
         "url": url,
-        "expires_in_seconds": int(os.getenv("PRESIGNED_URL_TTL_SECONDS", "3600")),
+        "streamed": False,
+        "expires_in_seconds": ttl,
         "submission_id": str(submission.id),
         "filename": submission.content_link,
         # Compliance manifest travels with every delivery (Phase 8).
-        "manifest": _compliance_manifest(submission, db),
+        "manifest": manifest,
     }
+
+
+@router.get("/{submission_id}/download/stream")
+def download_stream(
+    submission_id: str,
+    request: Request = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Decrypt-and-stream delivery for envelope-encrypted datasets (E5). Same gate
+    as /download; the authorized buyer's request triggers the in-memory KMS unwrap
+    + decrypt, and the plaintext is streamed straight to the client — never
+    re-persisted as a plaintext object."""
+    submission = _get_submission_or_404(submission_id, db)
+    _assert_download_allowed(submission, current_user, db)
+
+    plaintext = get_storage().read(submission.storage_location)  # transparent decrypt
+    _record_download(submission, current_user, request, db)
+
+    fn = (submission.content_link or "dataset").replace('"', "")
+    return StreamingResponse(
+        io.BytesIO(plaintext),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{fn}"'},
+    )
 
 
 # ---------------------------------------------------------------------------

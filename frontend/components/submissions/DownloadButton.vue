@@ -15,7 +15,19 @@ async function download() {
     try {
         const data = await api.get(`/submissions/${props.submissionId}/download`)
         manifest.value = data.manifest ?? null
-        window.open(data.url, '_blank', 'noopener')
+        if (data.streamed) {
+            // Envelope-encrypted dataset (E5): the server decrypts and streams the
+            // bytes over an authenticated request — fetch as a blob and save it.
+            const blob = await api.getBlob(data.download_path)
+            const objectUrl = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = objectUrl
+            a.download = data.filename || 'dataset'
+            a.click()
+            URL.revokeObjectURL(objectUrl)
+        } else {
+            window.open(data.url, '_blank', 'noopener')
+        }
     } catch (e: any) {
         error.value = e.message
     } finally {
