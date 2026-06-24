@@ -146,7 +146,7 @@ class Submission(BaseModel):
     dataset_hash = Column(String)
     access_token_id = Column(String)
     download_limit = Column(Integer, default=0)     # 0 = unlimited
-    download_count = Column(Integer, default=0)      # grants issued (E3: enforce download_limit)
+    download_count = Column(Integer, nullable=False, server_default="0", default=0)  # grants issued (E3: enforce download_limit)
     verified_by = Column(UUID(as_uuid=True), nullable=True)
     review_notes = Column(Text)
     file_size_bytes = Column(Integer)
