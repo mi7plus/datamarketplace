@@ -1,7 +1,8 @@
 # App-level secrets you populate (DB master secret is created by RDS automatically).
 # Create empty, then set values via console/CLI or a separate process — NOT in TF state.
 resource "aws_secretsmanager_secret" "app" {
-  name = "${var.name}/${var.env}/app"
+  name       = "${var.name}/${var.env}/app"
+  kms_key_id = aws_kms_key.data.arn # CMK (E2)
 }
 
 # Placeholder version so ECS can reference keys; replace values out-of-band.

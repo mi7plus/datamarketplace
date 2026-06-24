@@ -20,6 +20,7 @@ resource "aws_db_instance" "this" {
   vpc_security_group_ids = [aws_security_group.rds.id]
   publicly_accessible    = false
   storage_encrypted      = true
+  kms_key_id             = aws_kms_key.data.arn # CMK (E2), not the AWS-owned RDS key
 
   backup_retention_period   = 7
   deletion_protection       = true
