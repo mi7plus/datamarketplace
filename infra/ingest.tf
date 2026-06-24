@@ -74,6 +74,10 @@ locals {
     { name = "AWS_REGION", value = var.region },
     { name = "USE_S3", value = "true" },
     { name = "S3_BUCKET", value = aws_s3_bucket.data.bucket },
+    # E2/E5: the worker decrypts sensitive objects in memory to process them (the
+    # carve-out) and SSE-KMS-encrypts any derived artifacts it writes back.
+    { name = "S3_SSE_KMS_KEY_ID", value = aws_kms_key.data.arn },
+    { name = "ENVELOPE_KMS_KEY_ID", value = aws_kms_key.data.arn },
     { name = "INGEST_QUEUE_URL", value = aws_sqs_queue.ingest.url },
     # The worker calls the app's internal callback over the private network.
     { name = "PY_INTERNAL_BASE", value = "http://${aws_lb.this.dns_name}" },

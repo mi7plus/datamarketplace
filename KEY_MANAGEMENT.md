@@ -1,9 +1,10 @@
 # Encryption & Key Management
 
 Implements `rowbound-encryption-key-management.md`. **Scope split:** the
-application-layer controls live in this repo; the AWS/Terraform controls live in
-the separate `rowbound-deploy/infra` repo and are captured here as the spec to
-apply there.
+application-layer controls live in `backend/`; the AWS/Terraform controls now live
+in this repo's `infra/` (see `infra/kms.tf`). Both are committed; the Terraform is
+`terraform validate`-clean but must still be `terraform apply`-ed against a real
+account, and the live-env confirmations (E1.1/E1.2) verified there.
 
 **The line we hold:** encrypt at rest (KMS) + in transit (TLS everywhere,
 including app→DB) + minimize transient plaintext, while the app/Rust processing
@@ -22,6 +23,7 @@ moat.
 | **E3** Presigned hardening | `backend/app/storage.py`, `backend/app/submissions.py` | TTL default 1h→**5 min**, clamped to `PRESIGNED_URL_TTL_MAX`; HTTPS-only (dev escape hatch `PRESIGNED_ALLOW_HTTP`); `download_limit` enforced via new `download_count` |
 | **E5** Envelope encryption | `backend/app/crypto.py`, `storage.py`, `submissions.py` | KMS + dev key providers; AES-256-GCM; sensitive (PII) uploads stored as ciphertext; decrypt-and-stream delivery |
 | **E6** CI key check | `.github/workflows/ci.yml` | `secrets-guard` extended to PKCS#8/OpenSSH/AWS-secret/master-key material |
+| **E2** CMK (infra) | `infra/kms.tf`, `s3.tf`, `rds.tf`, `secrets.tf` | `aws_kms_key.data` (rotation on, 30-day window) + alias; S3 default enc `aws:kms` + `bucket_key_enabled`; RDS `kms_key_id`; Secrets `kms_key_id`; Decrypt/GenerateDataKey scoped to the app + ingest roles; CloudTrail (multi-region) for KMS audit. CMK ARN wired into both task defs as `S3_SSE_KMS_KEY_ID` + `ENVELOPE_KMS_KEY_ID`. |
 
 ### Configuration (see `backend/.env.example`)
 
@@ -48,25 +50,15 @@ These cannot be done from this repo — verify/apply them in the deploy repo via
 - **RDS:** confirm `storage_encrypted = true` on the live instance — it cannot be
   toggled after creation without a snapshot/restore, so check now.
 
-### E2.1 — Customer-managed KMS key
-```hcl
-resource "aws_kms_key" "data" {
-  description             = "rowbound data-at-rest"
-  enable_key_rotation     = true
-  deletion_window_in_days = 30
-}
-resource "aws_kms_alias" "data" {
-  name          = "alias/rowbound-${var.env}-data"
-  target_key_id = aws_kms_key.data.id
-}
-```
-- Switch the S3 bucket default encryption rule from `AES256` to `aws:kms` with
-  `kms_master_key_id = aws_kms_key.data.arn` and `bucket_key_enabled = true`.
-- Point RDS (`kms_key_id`) and Secrets Manager at customer-managed keys (same key
-  or, cleaner for blast-radius, separate keys).
-- **CloudTrail on for KMS** → audit trail of every decrypt.
-- Pass `aws_kms_key.data.arn` into the app/Rust task env as `S3_SSE_KMS_KEY_ID`
-  and `ENVELOPE_KMS_KEY_ID`.
+### E2.1 — Customer-managed KMS key — ✅ IMPLEMENTED in `infra/kms.tf`
+`aws_kms_key.data` + alias (rotation on, 30-day window); S3 default encryption
+switched to `aws:kms` + `bucket_key_enabled`; RDS `kms_key_id` and Secrets Manager
+`kms_key_id` point at the CMK; CloudTrail (multi-region, log-file validation)
+records every KMS use; the CMK ARN is wired into the app + ingest task envs as
+`S3_SSE_KMS_KEY_ID` and `ENVELOPE_KMS_KEY_ID`. Remaining: `terraform apply` and
+confirm CloudTrail shows only the app + ingest roles decrypting. (A single CMK is
+used for S3/RDS/Secrets; split into separate keys later if you want tighter
+blast-radius isolation.)
 
 ### E4 — Transient-plaintext minimization (infra side)
 - S3 lifecycle / purge rule for transient request/collect source data after

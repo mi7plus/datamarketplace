@@ -6,6 +6,9 @@ locals {
     { name = "AWS_REGION", value = var.region },
     { name = "USE_S3", value = "true" }, # real AWS S3 via the task role (storage.py)
     { name = "S3_BUCKET", value = aws_s3_bucket.data.bucket },
+    # E2/E5: the CMK the app uses for SSE-KMS puts + envelope-encrypting sensitive data.
+    { name = "S3_SSE_KMS_KEY_ID", value = aws_kms_key.data.arn },
+    { name = "ENVELOPE_KMS_KEY_ID", value = aws_kms_key.data.arn },
     { name = "POSTGRES_HOST", value = aws_db_instance.this.address },
     { name = "POSTGRES_PORT", value = "5432" },
     { name = "POSTGRES_DB", value = var.db_name },
