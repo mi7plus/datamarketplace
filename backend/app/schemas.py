@@ -27,6 +27,24 @@ class TokenSchema(BaseModel):
 
 ALLOWED_COLUMN_TYPES = {"string", "integer", "float", "boolean", "date", "datetime"}
 
+# Only these types are stable dedup keys across the Python and Rust ingest engines
+# (C1 — Rust cutover gate). float/boolean/date/datetime stringify differently in
+# Python str() vs Rust formatting, so a key of those types would hash differently
+# in Rust than the AcceptedKey rows Python already wrote → silent missed overlaps →
+# double-pay. Block them at spec validation everywhere a unique_key is declared.
+PARITY_SAFE_KEY_TYPES = {"string", "integer"}
+
+
+def validate_unique_key_types(unique_key, type_by_name: dict[str, str]) -> None:
+    """Raise ValueError if any unique_key column isn't a parity-safe dedup type.
+    Assumes existence has already been checked (so every key is in type_by_name)."""
+    bad = [k for k in (unique_key or []) if type_by_name.get(k) not in PARITY_SAFE_KEY_TYPES]
+    if bad:
+        raise ValueError(
+            f"unique_key columns must be string or integer "
+            f"(float/boolean/date/datetime are not stable dedup keys): {bad}"
+        )
+
 class SpecColumn(BaseModel):
     name: str
     type: Literal["string", "integer", "float", "boolean", "date", "datetime"]
@@ -54,10 +72,11 @@ class RequestSpec(BaseModel):
     @model_validator(mode="after")
     def unique_key_columns_exist(self) -> "RequestSpec":
         if self.unique_key:
-            col_names = {c.name for c in self.columns}
-            missing = [k for k in self.unique_key if k not in col_names]
+            type_by_name = {c.name: c.type for c in self.columns}
+            missing = [k for k in self.unique_key if k not in type_by_name]
             if missing:
                 raise ValueError(f"unique_key references unknown columns: {missing}")
+            validate_unique_key_types(self.unique_key, type_by_name)
         return self
 
 
@@ -91,10 +110,11 @@ class CollectionSpec(BaseModel):
     @model_validator(mode="after")
     def unique_key_fields_exist(self) -> "CollectionSpec":
         if self.unique_key:
-            names = {f.name for f in self.fields}
-            missing = [k for k in self.unique_key if k not in names]
+            type_by_name = {f.name: f.type for f in self.fields}
+            missing = [k for k in self.unique_key if k not in type_by_name]
             if missing:
                 raise ValueError(f"unique_key references unknown fields: {missing}")
+            validate_unique_key_types(self.unique_key, type_by_name)
         return self
 
 

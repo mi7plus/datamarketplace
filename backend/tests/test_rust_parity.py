@@ -28,9 +28,31 @@ GOLDEN = [
 ]
 
 
+# Unicode golden vectors (C4) — pin non-ASCII normalization across BOTH engines so
+# Rust to_lowercase() and Python .lower() can't silently diverge. Identical
+# constants are asserted in ingest-service/tests/parity.rs.
+UNICODE_GOLDEN = [
+    ({"k": "Café"}, ["k"],
+     "8a83ced373c18dc75829e862734c9bf73611394f268f5333aa69181189cb1423"),
+    # NBSP (U+00A0) collapses to a normal space, same as the plain "a b".
+    ({"k": "a b"}, ["k"],
+     "4b3d642be2afb4334e9ae34bc9d18511ecb8020add5851d6706e2453d880c307"),
+    # Turkish dotted capital İ → "i" + combining dot above (U+0307).
+    ({"k": "İstanbul"}, ["k"],
+     "99ab0ef4d380818b4ad053b7767428c52e26a29b934b0ad24de5313656657065"),
+    # German eszett ß is unchanged by lowercasing in both engines.
+    ({"k": "Straße"}, ["k"],
+     "65db3053a1a9e1865c69fe5eaf110b99b1497d0ff71fb433002bf53d70e3742b"),
+]
+
+
 class TestGoldenKeyHashes:
     @pytest.mark.parametrize("row,uk,expected", GOLDEN)
     def test_key_hash_golden(self, row, uk, expected):
+        assert key_hash(row, uk) == expected
+
+    @pytest.mark.parametrize("row,uk,expected", UNICODE_GOLDEN)
+    def test_key_hash_unicode_golden(self, row, uk, expected):
         assert key_hash(row, uk) == expected
 
     def test_normalize_value(self):

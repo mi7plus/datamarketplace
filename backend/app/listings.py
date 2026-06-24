@@ -88,6 +88,15 @@ async def create_listing(
             spec_dict = json.loads(spec)
         except json.JSONDecodeError:
             raise HTTPException(status_code=422, detail="spec must be valid JSON")
+        # Validate the spec the same way request creation does — crucially this
+        # enforces parity-safe unique_key types (C1), so a listing can't declare a
+        # float/date dedup key that would diverge between Python and Rust ingest.
+        from pydantic import ValidationError
+        from app.schemas import RequestSpec
+        try:
+            RequestSpec(**spec_dict)
+        except ValidationError as e:
+            raise HTTPException(status_code=422, detail=str(e))
 
     ext = (file.filename or "").rsplit(".", 1)[-1].lower()
     if ext not in ALLOWED_EXTENSIONS:

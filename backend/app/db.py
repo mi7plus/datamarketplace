@@ -26,6 +26,32 @@ SQLALCHEMY_DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}
 DB_SSLMODE = os.getenv("DB_SSLMODE", "prefer")
 DB_SSLROOTCERT = os.getenv("DB_SSLROOTCERT")  # path to RDS CA bundle (verify-full)
 
+
+def assert_db_tls_policy(env: dict | None = None) -> None:
+    """Fail closed in production (C3). 'prefer' silently falls back to plaintext and
+    never validates the server cert — fine for dev, dangerous in prod. When
+    APP_ENV/ENVIRONMENT is prod[uction], refuse to boot unless DB_SSLMODE forces
+    TLS ('require' or 'verify-full'), and require the CA bundle for 'verify-full'.
+    Any other APP_ENV (dev/CI) is unaffected, so plaintext local Postgres works."""
+    env = env if env is not None else os.environ
+    app_env = (env.get("APP_ENV") or env.get("ENVIRONMENT") or "").lower()
+    if app_env not in ("prod", "production"):
+        return
+    sslmode = env.get("DB_SSLMODE", "prefer")
+    if sslmode not in ("require", "verify-full"):
+        raise RuntimeError(
+            f"Refusing to start: APP_ENV is production but DB_SSLMODE is {sslmode!r}. "
+            "Set DB_SSLMODE=verify-full (preferred) or 'require' to force TLS to Postgres."
+        )
+    if sslmode == "verify-full" and not env.get("DB_SSLROOTCERT"):
+        raise RuntimeError(
+            "Refusing to start: DB_SSLMODE=verify-full requires DB_SSLROOTCERT "
+            "(the RDS CA bundle path) to validate the server certificate."
+        )
+
+
+assert_db_tls_policy()  # fail closed before opening any connection
+
 _connect_args: dict = {"sslmode": DB_SSLMODE}
 if DB_SSLROOTCERT:
     _connect_args["sslrootcert"] = DB_SSLROOTCERT

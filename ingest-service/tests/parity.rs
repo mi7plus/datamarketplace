@@ -52,6 +52,38 @@ fn key_hash_matches_python_ground_truth() {
 }
 
 #[test]
+fn unicode_golden_vectors_match_python() {
+    // C4: pin non-ASCII normalization (Rust to_lowercase + split_whitespace vs
+    // Python .lower() + \s collapse). Same constants live in
+    // backend/tests/test_rust_parity.py (generated from app/keys.py).
+    let cases: &[(&str, &str)] = &[
+        (
+            "Café",
+            "8a83ced373c18dc75829e862734c9bf73611394f268f5333aa69181189cb1423",
+        ),
+        // NBSP (U+00A0) collapses to a normal space.
+        (
+            "a\u{00a0}b",
+            "4b3d642be2afb4334e9ae34bc9d18511ecb8020add5851d6706e2453d880c307",
+        ),
+        // Turkish dotted capital İ → "i" + combining dot above (U+0307).
+        (
+            "İstanbul",
+            "99ab0ef4d380818b4ad053b7767428c52e26a29b934b0ad24de5313656657065",
+        ),
+        // German eszett ß unchanged by lowercasing.
+        (
+            "Straße",
+            "65db3053a1a9e1865c69fe5eaf110b99b1497d0ff71fb433002bf53d70e3742b",
+        ),
+    ];
+    for (raw, expected) in cases {
+        let parts = vec![normalize_value(raw)];
+        assert_eq!(&key_hash(&parts), expected, "unicode mismatch for {raw:?}");
+    }
+}
+
+#[test]
 fn normalize_collapses_near_dupes() {
     assert_eq!(normalize_value("Acme  Inc"), normalize_value("acme inc"));
     assert_eq!(normalize_value("  X "), "x");
