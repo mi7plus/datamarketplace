@@ -22,6 +22,28 @@ frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 app = FastAPI(title="DataMarketplace API")
 
+
+# Liveness probe for the ALB target group + Docker HEALTHCHECK. Dependency-free
+# (no DB call) so a transient DB blip doesn't flap the load balancer.
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+
+# Deep readiness check — NOT wired to the load balancer; diagnostics only.
+@app.get("/health/db")
+def health_db():
+    from sqlalchemy import text
+    from app.db import SessionLocal
+    try:
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+        return {"status": "ok", "db": "up"}
+    except Exception:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=503, content={"status": "error", "db": "down"})
+
+
 # Allow CORS
 origins = [
     frontend_url,
