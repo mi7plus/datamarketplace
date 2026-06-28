@@ -32,7 +32,7 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::<ACCOUNT_ID>:role/rowbound-prod-github-deploy
+          role-to-assume: arn:aws:iam::461236647042:role/rowbound-prod-github-deploy
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
@@ -74,10 +74,9 @@ jobs:
       # Run migrations as a ONE-OFF task BEFORE shifting traffic. Never from app startup.
       - name: Run Alembic migrations (one-off task)
         run: |
-          SUBNETS=$(aws ssm get-parameter --name /rowbound/prod/private_subnets --query Parameter.Value --output text 2>/dev/null || echo "")
-          # If you don't store these in SSM, hardcode subnet-/sg- ids (from terraform output) here:
-          SUBNETS="${SUBNETS:-subnet-AAA,subnet-BBB}"
-          SG="sg-APP"
+          # Private subnets + app SG from `terraform output` (eu-north-1).
+          SUBNETS="subnet-00dbb35bc5b42a007,subnet-04db24ed193b84c9b"
+          SG="sg-01c9e879b00ba8f54"
           TASK_ARN=$(aws ecs run-task \
             --cluster "$ECS_CLUSTER" \
             --launch-type FARGATE \
