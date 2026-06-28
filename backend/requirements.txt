@@ -14,6 +14,7 @@ cryptography
 email-validator
 python-multipart
 pytest
+httpx==0.28.1   # required by starlette.testclient (FastAPI TestClient) — was missing
 apscheduler
 
 pyotp

@@ -77,7 +77,10 @@ pub fn process_tabular(
             let mut report = base_report(job_id, submission_id, dataset_hash);
             report.set_status(IngestStatus::RejectedInvalid);
             report.errors.push(format!("Failed to parse file: {e}"));
-            return TabularOutput { report, key_hashes: Vec::new() };
+            return TabularOutput {
+                report,
+                key_hashes: Vec::new(),
+            };
         }
     };
 
@@ -149,10 +152,8 @@ pub fn process_tabular(
         };
     }
     let completeness = 1.0 - null_rate;
-    let quality_score = round4(
-        (conformance_rate * (1.0 - duplicate_density) * completeness)
-            .clamp(0.0, 1.0),
-    );
+    let quality_score =
+        round4((conformance_rate * (1.0 - duplicate_density) * completeness).clamp(0.0, 1.0));
 
     let mut report = base_report(job_id, submission_id, dataset_hash);
     report.set_status(if validated_amount > 0 {
@@ -305,7 +306,9 @@ fn parse_csv(file_bytes: &[u8]) -> Result<Vec<std::collections::HashMap<String, 
     Ok(out)
 }
 
-fn parse_jsonl(file_bytes: &[u8]) -> Result<Vec<std::collections::HashMap<String, String>>, String> {
+fn parse_jsonl(
+    file_bytes: &[u8],
+) -> Result<Vec<std::collections::HashMap<String, String>>, String> {
     let text = String::from_utf8_lossy(file_bytes);
     let mut out = Vec::new();
     for line in text.lines() {
@@ -402,7 +405,10 @@ mod tests {
     #[test]
     fn counts_and_dedup() {
         let csv = b"email,n\na@x.com,1\na@x.com,1\nb@x.com,2\n";
-        let s = spec(&[("email", "string", true), ("n", "integer", true)], &["email"]);
+        let s = spec(
+            &[("email", "string", true), ("n", "integer", true)],
+            &["email"],
+        );
         let out = process_tabular(csv, "f.csv", &s, "j", "sub");
         assert_eq!(out.report.validated_amount, 2); // one dupe removed
         assert_eq!(out.report.duplicate_rows, 1);

@@ -38,7 +38,10 @@ fn request_roundtrips_json() {
 #[test]
 fn deterministic_same_input_same_output() {
     let csv = b"email,n\nAlice@X.com,1\nbob@x.com,2\nALICE@x.com ,3\n";
-    let s = spec(&[("email", "string", true), ("n", "integer", true)], &["email"]);
+    let s = spec(
+        &[("email", "string", true), ("n", "integer", true)],
+        &["email"],
+    );
     let a = tabular::process_tabular(csv, "f.csv", &s, "j", "sub");
     let b = tabular::process_tabular(csv, "f.csv", &s, "j", "sub");
     assert_eq!(a.report.validated_amount, b.report.validated_amount);

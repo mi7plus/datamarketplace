@@ -7,7 +7,7 @@
 //! this table (see RUST_INGEST_DEPLOY.md). Rust computes; Python settles.
 
 use anyhow::{Context, Result};
-use sqlx::postgres::{PgPoolOptions, PgPool};
+use sqlx::postgres::{PgPool, PgPoolOptions};
 use sqlx::Row;
 use std::io::Write;
 
@@ -40,7 +40,7 @@ impl Staging {
 
         if !hashes.is_empty() {
             // COPY ... FROM STDIN (text format): "submission_id\tkey_hash\n".
-            let mut copy = (&mut *tx)
+            let mut copy = tx
                 .copy_in_raw(
                     "COPY submission_key_staging (submission_id, key_hash) \
                      FROM STDIN WITH (FORMAT text)",

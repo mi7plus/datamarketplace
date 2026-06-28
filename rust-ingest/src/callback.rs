@@ -20,7 +20,10 @@ impl Callback {
     pub fn new(cfg: &Config) -> Self {
         Callback {
             http: reqwest::Client::new(),
-            url: format!("{}/internal/ingest-result", cfg.callback_base_url.trim_end_matches('/')),
+            url: format!(
+                "{}/internal/ingest-result",
+                cfg.callback_base_url.trim_end_matches('/')
+            ),
             token: cfg.internal_token.clone(),
         }
     }

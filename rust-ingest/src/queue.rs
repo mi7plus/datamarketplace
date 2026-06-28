@@ -29,7 +29,10 @@ pub async fn run_workers(cfg: Config, pipeline: Pipeline, callback: Callback) {
     let shared = loader.load().await;
     let sqs = Arc::new(SqsClient::new(&shared));
 
-    tracing::info!(concurrency = cfg.worker_concurrency, "starting SQS worker pool");
+    tracing::info!(
+        concurrency = cfg.worker_concurrency,
+        "starting SQS worker pool"
+    );
     let mut handles = Vec::new();
     for worker_id in 0..cfg.worker_concurrency {
         let sqs = sqs.clone();

@@ -41,3 +41,5 @@ infra/*.tfvars
 ingest-service/target/
 # Portable media binaries (local only — prod installs ffmpeg/fpcalc in the image)
 ingest-service/.bin/
+rust-ingest/target/
+rust-ingest/.bin/

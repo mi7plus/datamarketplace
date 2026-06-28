@@ -33,19 +33,14 @@ pub struct Spec {
 }
 
 /// Modality of the source object.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Modality {
+    #[default]
     Tabular,
     Image,
     Audio,
     Video,
-}
-
-impl Default for Modality {
-    fn default() -> Self {
-        Modality::Tabular
-    }
 }
 
 /// Inbound job. `job_id` = submission_id + content_hash for idempotency.

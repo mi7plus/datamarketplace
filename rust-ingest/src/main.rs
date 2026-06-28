@@ -6,20 +6,22 @@
 //! accepted — it returns a deterministic report and Python does the locked
 //! allocation. See PLAN: rowbound-rust-ingest-service-plan.md.
 
-use rowbound_ingest::{callback, config, contract, error, metrics, pipeline, queue, staging, storage};
+use rowbound_ingest::{
+    callback, config, contract, error, metrics, pipeline, queue, staging, storage,
+};
 
+use axum::extract::{DefaultBodyLimit, State};
+use axum::http::HeaderMap;
+use axum::routing::{get, post};
+use axum::{Json, Router};
 use callback::Callback;
 use config::Config;
 use contract::{IngestReport, IngestRequest};
 use error::AppError;
 use pipeline::Pipeline;
 use staging::Staging;
-use storage::S3;
-use axum::extract::{DefaultBodyLimit, State};
-use axum::http::HeaderMap;
-use axum::routing::{get, post};
-use axum::{Json, Router};
 use std::sync::Arc;
+use storage::S3;
 
 #[derive(Clone)]
 struct AppState {
@@ -33,8 +35,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .json()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 

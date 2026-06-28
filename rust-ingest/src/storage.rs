@@ -18,8 +18,7 @@ pub struct S3 {
 
 impl S3 {
     pub async fn new(cfg: &Config) -> Result<Self> {
-        let mut loader =
-            aws_config::defaults(aws_config::BehaviorVersion::latest());
+        let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
         if let Some(ep) = &cfg.s3_endpoint {
             loader = loader.endpoint_url(ep);
         }

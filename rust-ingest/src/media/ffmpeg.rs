@@ -42,7 +42,11 @@ pub fn process_video(bytes: &[u8]) -> MediaOutput {
     }
 
     let _ = std::fs::remove_file(&tmp);
-    MediaOutput { meta, perceptual, errors }
+    MediaOutput {
+        meta,
+        perceptual,
+        errors,
+    }
 }
 
 fn corrupt(errors: Vec<String>) -> MediaOutput {
@@ -76,10 +80,14 @@ fn uuid_like() -> String {
 fn ffprobe(path: &std::path::Path) -> Result<MediaMeta, String> {
     let out = Command::new("ffprobe")
         .args([
-            "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=codec_name,width,height:format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=0",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=codec_name,width,height:format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=0",
         ])
         .arg(path)
         .output()

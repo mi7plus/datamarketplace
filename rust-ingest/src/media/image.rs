@@ -54,9 +54,7 @@ pub fn process(bytes: &[u8]) -> MediaOutput {
 
 /// Average-hash: 8x8 grayscale, bit set where the pixel exceeds the mean.
 fn average_hash(img: &image::DynamicImage) -> u64 {
-    let small = img
-        .resize_exact(8, 8, FilterType::Triangle)
-        .to_luma8();
+    let small = img.resize_exact(8, 8, FilterType::Triangle).to_luma8();
     let pixels: Vec<u8> = small.pixels().map(|p| p.0[0]).collect();
     let sum: u32 = pixels.iter().map(|&p| p as u32).sum();
     let mean = (sum / pixels.len() as u32) as u8;
