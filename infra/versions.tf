@@ -8,9 +8,9 @@ terraform {
   }
   # Recommended: remote state. Create the bucket + lock table once, then uncomment.
   # backend "s3" {
-  #   bucket         = "rowbound-tfstate-<ACCOUNT_ID>"
+  #   bucket         = "rowbound-tfstate-461236647042"
   #   key            = "rowbound/terraform.tfstate"
-  #   region         = "eu-west-1"
+  #   region         = "eu-north-1"
   #   dynamodb_table = "rowbound-tflock"
   #   encrypt        = true
   # }

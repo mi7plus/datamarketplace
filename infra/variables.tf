@@ -66,10 +66,8 @@ variable "stripe_use_real" {
   default = "true"
 }
 
-# DNS / TLS
-variable "acm_certificate_arn" {
-  type = string # cert for the ALB (api domain)
-}
+# DNS / TLS — the API cert is now created + DNS-validated in dns.tf (Route 53),
+# so there is no acm_certificate_arn input; see variable "domain_name".
 
 # CI/CD (GitHub OIDC)
 variable "github_org" {

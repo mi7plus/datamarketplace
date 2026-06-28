@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  AWS_REGION: eu-west-1                 # match infra
+  AWS_REGION: eu-north-1                # match infra
   ECR_REPO: rowbound-backend
   ECS_CLUSTER: rowbound-prod
   ECS_SERVICE: rowbound-prod

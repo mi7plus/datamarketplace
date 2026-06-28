@@ -1,8 +1,8 @@
-region              = "eu-west-1"
-env                 = "prod"
-azs                 = ["eu-west-1a", "eu-west-1b"]
-db_engine_version   = "16"
-frontend_url        = "https://app.rowbound.example"
-acm_certificate_arn = "arn:aws:acm:eu-west-1:<ACCOUNT_ID>:certificate/<CERT_ID>"
-github_org          = "mi7plus"
-github_repo         = "datamarketplace"
+region            = "eu-north-1"
+env               = "prod"
+azs               = ["eu-north-1a", "eu-north-1b"]
+db_engine_version = "16"
+frontend_url      = "https://app.rowbound.example" # the deployed Nuxt origin (CORS)
+domain_name       = "example.com"                  # your registered apex domain; API served at api.<domain>
+github_org        = "mi7plus"
+github_repo       = "datamarketplace"
