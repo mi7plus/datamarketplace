@@ -34,6 +34,8 @@ frontend/.data/
 infra/.bin/
 infra/.terraform/
 infra/.terraform.lock.hcl
+# Real tfvars (env config) — only the *.example is committed
+infra/*.tfvars
 
 # Rust build artifacts
 ingest-service/target/
