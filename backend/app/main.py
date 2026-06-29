@@ -67,12 +67,19 @@ def health_db():
         return JSONResponse(status_code=503, content={"status": "error", "db": "down"})
 
 
-# Allow CORS — apex + www of FRONTEND_URL, plus localhost.
+# Allow CORS — explicit origins (apex + www of FRONTEND_URL, plus localhost) AND a
+# regex that matches any https subdomain of the production domain. The regex makes
+# CORS robust even if the deployed FRONTEND_URL env is stale/wrong (e.g. www. vs
+# apex), which is exactly what bit us. Still never "*" (required with credentials).
 origins = cors_origins()
+cors_origin_regex = os.getenv(
+    "CORS_ALLOW_ORIGIN_REGEX", r"https://([a-z0-9-]+\.)*rowbound\.com"
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,          # explicit origins — never "*" (required with credentials)
+    allow_origins=origins,
+    allow_origin_regex=cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],  # GET, POST, etc
     allow_headers=["*"],  # all headers
