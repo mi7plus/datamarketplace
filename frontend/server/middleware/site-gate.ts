@@ -54,8 +54,11 @@ export default defineEventHandler(async (event) => {
     // (SSR + dev) and to the prerendered pages once served behind it.
     if (import.meta.prerender) return
 
-    const password = process.env.SITE_PASSWORD
-    if (!password) return   // gate disabled — normal site
+    // Read from runtimeConfig (baked at build from SITE_PASSWORD) so the gate works
+    // even when the SSR runtime env isn't injected (Amplify compute); falls back to
+    // process.env for local/dev. Unset → gate disabled (normal public site).
+    const password = useRuntimeConfig(event).sitePassword || process.env.SITE_PASSWORD
+    if (!password) return
 
     const path = event.path || '/'
     const expected = token(password)

@@ -86,6 +86,11 @@ export default defineNuxtConfig({
   runtimeConfig: {
     // Private: only available on server-side
     apiSecret: process.env.API_SECRET || '',
+    // Private-preview gate password. Captured at BUILD time from SITE_PASSWORD so the
+    // gate works even where the SSR runtime env isn't injected (e.g. Amplify compute).
+    // Server-only (not under `public`), so it's never exposed to the client bundle.
+    // Can still be overridden at runtime via NUXT_SITE_PASSWORD.
+    sitePassword: process.env.SITE_PASSWORD || '',
 
     // Public: available in both client and server
     public: {
