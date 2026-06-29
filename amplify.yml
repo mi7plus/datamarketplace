@@ -1,0 +1,25 @@
+# AWS Amplify build spec (monorepo: the Nuxt app lives in frontend/).
+# Makes the SSR build deterministic instead of relying on console autodetect:
+# build in frontend/, run the standard Nuxt build (emits the aws-amplify preset's
+# .amplify-hosting bundle per nuxt.config.ts), and ship that bundle as the artifact.
+#
+# Requires the Amplify app platform to be WEB_COMPUTE (SSR) and a Node 20 build image.
+version: 1
+applications:
+  - appRoot: frontend
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - npm ci
+        build:
+          commands:
+            - npm run build
+      artifacts:
+        # The Nitro aws-amplify preset writes the compute + static bundle here.
+        baseDirectory: .amplify-hosting
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*
