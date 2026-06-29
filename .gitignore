@@ -20,6 +20,7 @@ venv/
 node_modules/
 frontend/.nuxt/
 frontend/.output/
+frontend/.amplify-hosting/
 frontend/dist/
 
 # OS

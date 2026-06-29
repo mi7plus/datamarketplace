@@ -60,6 +60,10 @@ export default defineNuxtConfig({
   // the one thing the gate doesn't cover in a prod build. For a fully-gated staging
   // build, build with PRERENDER_MARKETING=false to SSR everything.
   nitro: {
+    // Pin the Amplify SSR preset so the compute function is built correctly
+    // regardless of whether Amplify sets NITRO_PRESET (an unset/wrong preset
+    // produces a handler Amplify can't invoke → 502).
+    preset: 'aws-amplify',
     prerender: process.env.PRERENDER_MARKETING === 'false'
       ? undefined
       : {
