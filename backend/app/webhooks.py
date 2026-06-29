@@ -37,6 +37,11 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         except Exception:
             raise HTTPException(status_code=400, detail="Malformed payload")
 
+    # construct_event (signed path) returns a Stripe Event object, not a dict, so
+    # `.get(...)` would AttributeError. Normalize once so both paths use dict access.
+    if not isinstance(event, dict):
+        event = event.to_dict()
+
     event_type = event.get("type", "")
     event_id = event.get("id", "")
 
