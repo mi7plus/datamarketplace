@@ -1,4 +1,6 @@
 <script setup lang="ts">
+// Listing a dataset requires an account — redirect to /login if signed out.
+definePageMeta({ middleware: 'auth' })
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import PageWrapper from '~/components/layout/PageWrapper.vue'

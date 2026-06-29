@@ -1,4 +1,6 @@
 <script setup lang="ts">
+// Collecting data requires an account — redirect to /login if signed out.
+definePageMeta({ middleware: 'auth' })
 import { ref, onMounted, computed } from 'vue'
 import PageWrapper from '~/components/layout/PageWrapper.vue'
 import { useApi } from '~/composables/useApi'

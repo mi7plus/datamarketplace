@@ -1,4 +1,6 @@
 <script setup>
+// Posting a data request requires an account — redirect to /login if signed out.
+definePageMeta({ middleware: 'auth' })
 import RequestForm from '~/components/requests/RequestForm.vue'
 import BackButton from '~/components/BackButton.vue'
 import PageWrapper from '~/components/layout/PageWrapper.vue'
