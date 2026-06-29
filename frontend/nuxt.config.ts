@@ -64,7 +64,11 @@ export default defineNuxtConfig({
     // regardless of whether Amplify sets NITRO_PRESET (an unset/wrong preset
     // produces a handler Amplify can't invoke → 502).
     preset: 'aws-amplify',
-    prerender: process.env.PRERENDER_MARKETING === 'false'
+    // Disable prerendering when the private-preview gate is active (SITE_PASSWORD set)
+    // or when PRERENDER_MARKETING=false. Prerendered pages are static HTML served by
+    // the CDN, so the site-gate server middleware never runs for them — leaving the
+    // homepage/guides ungated. SSR-only keeps every route going through the middleware.
+    prerender: (process.env.SITE_PASSWORD || process.env.PRERENDER_MARKETING === 'false')
       ? undefined
       : {
           crawlLinks: false,
