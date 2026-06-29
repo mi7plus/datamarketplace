@@ -18,6 +18,29 @@ from pathlib import Path
 import os
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")  # load variables from .env
+
+
+def cors_origins(env: dict | None = None) -> list[str]:
+    """Allowed CORS origins. FRONTEND_URL may be a comma-separated list; for every
+    https origin we also allow its www↔apex counterpart, since the site is reached
+    at both rowbound.com and www.rowbound.com. localhost stays allowed for dev.
+    Exact origins only — never '*' (required with allow_credentials=True)."""
+    env = env if env is not None else os.environ
+    raw = env.get("FRONTEND_URL", "http://localhost:3000")
+    out: set[str] = set()
+    for o in raw.split(","):
+        o = o.strip().rstrip("/")
+        if not o:
+            continue
+        out.add(o)
+        if o.startswith("https://"):
+            host = o[len("https://"):]
+            counterpart = host[4:] if host.startswith("www.") else "www." + host
+            out.add("https://" + counterpart)
+    out.add("http://localhost:3000")
+    return sorted(out)
+
+
 frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 app = FastAPI(title="DataMarketplace API")
@@ -44,11 +67,8 @@ def health_db():
         return JSONResponse(status_code=503, content={"status": "error", "db": "down"})
 
 
-# Allow CORS
-origins = [
-    frontend_url,
-    "http://localhost:3000",
-]
+# Allow CORS — apex + www of FRONTEND_URL, plus localhost.
+origins = cors_origins()
 
 app.add_middleware(
     CORSMiddleware,
