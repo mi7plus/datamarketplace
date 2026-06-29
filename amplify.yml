@@ -13,8 +13,13 @@ applications:
           commands:
             - npm ci
         build:
+          # SSR-only build (no prerender). Prerendered routes get routed to the
+          # compute by the deploy-manifest's /* catch-all, but their static HTML
+          # lives on the CDN — not in the compute bundle — so the compute 500s with
+          # ENOENT on static/index.html (→ 502). Rendering every route dynamically
+          # avoids that. Verified: the isolated compute serves /, /contact, /guides 200.
           commands:
-            - npm run build
+            - PRERENDER_MARKETING=false npm run build
       artifacts:
         # The Nitro aws-amplify preset writes the compute + static bundle here.
         baseDirectory: .amplify-hosting
