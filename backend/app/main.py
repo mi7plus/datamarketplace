@@ -121,6 +121,12 @@ _scheduler = None
 @app.on_event("startup")
 def _start_sweep():
     global _scheduler
+    # OFF by default. In prod the auto-release sweep is run by a SINGLE
+    # EventBridge-triggered task; an in-process scheduler here would run it on every
+    # API container (×2 tasks) concurrently with EventBridge — a double-payout risk.
+    # Only enable the in-process sweep for local dev via RUN_INPROCESS_SWEEP=true.
+    if os.getenv("RUN_INPROCESS_SWEEP", "false").lower() != "true":
+        return
     from app.sweep import start_scheduler
     _scheduler = start_scheduler()
 
