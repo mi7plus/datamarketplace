@@ -17,6 +17,15 @@ def notify(user, subject: str, body: str) -> None:
     if not email:
         logger.warning("NOTIFY skipped (no email) | %s | %s", subject, body)
         return
+    notify_address(email, subject, body)
+
+
+def notify_address(email: str | None, subject: str, body: str) -> None:
+    """Send an out-of-band notice to a fixed address (e.g. an internal inbox), rather
+    than to a user record. Same best-effort contract as notify()."""
+    if not email:
+        logger.warning("NOTIFY skipped (no address) | %s | %s", subject, body)
+        return
     try:
         from app.mailer import get_mailer
         get_mailer().send(to=email, subject=subject, body=body)

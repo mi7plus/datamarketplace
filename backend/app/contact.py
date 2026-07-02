@@ -12,10 +12,17 @@ from app.db import get_db
 from app.models import ContactMessage
 from app.ratelimit import rate_limit
 from app.audit import client_ip
-from app.notifications import notify
+from app.notifications import notify_address
+
+import os
 
 router = APIRouter()
 _contact_rl = rate_limit("contact", limit=5, window_seconds=60)
+
+# Where contact-form submissions are emailed. Delivery depends on a live mailer
+# (MAILER=ses); until then notify_address just logs. Messages are always persisted
+# to ContactMessage regardless, so nothing is lost.
+CONTACT_INBOX = os.getenv("CONTACT_INBOX", "contact@rowbound.com")
 
 REASONS = {"buyer", "supplier", "press", "support"}
 
@@ -63,6 +70,13 @@ def submit_contact(
     db.add(msg)
     db.commit()
 
-    notify(None, f"Contact [{data.reason}]",
-           f"{msg.name} <{msg.email}> ({msg.org or '—'}): {msg.message[:300]}")
+    notify_address(
+        CONTACT_INBOX,
+        f"Contact [{data.reason}] from {msg.name}",
+        f"From: {msg.name} <{msg.email}>\n"
+        f"Org: {msg.org or '—'}\n"
+        f"Reason: {msg.reason}\n\n"
+        f"{msg.message}\n\n"
+        f"— reply directly to {msg.email}",
+    )
     return {"ok": True}
