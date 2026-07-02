@@ -1,7 +1,7 @@
 # app/models.py
 from sqlalchemy import (
     Column, Integer, String, ForeignKey, Text, Float,
-    Boolean, DateTime, Index, JSON, Numeric
+    Boolean, DateTime, Index, JSON, Numeric, UniqueConstraint
 )
 import uuid
 from sqlalchemy.dialects.postgresql import UUID
@@ -66,7 +66,9 @@ class License(BaseModel):
 class UserAuth(BaseModel):
     __tablename__ = "user_auth"
     email = Column(String, unique=True, index=True, nullable=False)
-    password_hash = Column(String, nullable=False)
+    # Nullable: a social-only account (signed up via Google/Microsoft) has no
+    # password. The login path guards against a null hash (social-login plan).
+    password_hash = Column(String, nullable=True)
     refresh_token_hash = Column(String)
     role = Column(Enum(UserRole, name="user_role_enum"), nullable=False)
     is_verified = Column(Boolean, default=False)
@@ -83,7 +85,24 @@ class UserAuth(BaseModel):
     requests = relationship("DataRequest", back_populates="requester", cascade="all, delete-orphan")
     submissions = relationship("Submission", back_populates="provider", cascade="all, delete-orphan")
     analytics = relationship("UserAnalytics", uselist=False, back_populates="user", cascade="all, delete-orphan")
+    identities = relationship("UserIdentity", back_populates="user", cascade="all, delete-orphan")
     __table_args__ = (Index("idx_user_auth_email", "email"),)
+
+
+class UserIdentity(BaseModel):
+    """A linked external login identity (social-login plan §4.1). One row per
+    (provider, provider_subject). `provider_subject` is the OIDC `sub` (stable),
+    NOT the email — emails change, `sub` doesn't. Never a money/lifecycle path."""
+    __tablename__ = "user_identity"
+    user_id = Column(UUID(as_uuid=True), ForeignKey("user_auth.id", ondelete="CASCADE"), nullable=False)
+    provider = Column(String, nullable=False)          # 'google' | 'microsoft' | 'password'
+    provider_subject = Column(String, nullable=False)  # OIDC sub — the stable key
+    email_at_link = Column(String, nullable=True)      # provider-asserted email at link time (audit)
+    user = relationship("UserAuth", back_populates="identities")
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_subject", name="uq_identity_provider_subject"),
+        Index("idx_identity_user", "user_id"),
+    )
 
 
 class DataRequest(BaseModel):

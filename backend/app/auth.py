@@ -200,7 +200,9 @@ def login(
             detail="Account temporarily locked due to failed login attempts. Try again later.",
         )
 
-    if not user or not pwd_context.verify(data.password, user.password_hash):
+    # A social-only account (Google/Microsoft) has no password_hash — it can never
+    # be password-logged-in. Guard the None before passlib (which would raise).
+    if not user or user.password_hash is None or not pwd_context.verify(data.password, user.password_hash):
         # Count the failure and lock after the threshold (only for a real account).
         if user:
             user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
@@ -215,6 +217,15 @@ def login(
     user.account_locked = False
     user.locked_until = None
     user.last_login_at = datetime.utcnow()
+
+    # Hard-gate on email verification (§7.2). Behind REQUIRE_VERIFIED_EMAIL so it's
+    # ON in prod but OFF for dev/CI, where LogMailer never delivers a link (and every
+    # register→login test would otherwise break). Password is already verified here.
+    if os.getenv("REQUIRE_VERIFIED_EMAIL", "false").lower() == "true" and not user.is_verified:
+        raise HTTPException(
+            status_code=403,
+            detail="Please verify your email before signing in — check your inbox or request a new link.",
+        )
 
     access_token = create_access_token(user.id)
     refresh_token = create_refresh_token(user.id)
