@@ -18,6 +18,15 @@
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# This module reads GOOGLE_CLIENT_ID/SECRET at import time, and main.py imports it
+# BEFORE it calls load_dotenv() — so load the .env here first (same pattern as db.py),
+# or the creds are invisible and the provider never registers. In prod the creds come
+# from the injected task environment, where this is a harmless no-op.
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request

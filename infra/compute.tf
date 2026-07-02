@@ -13,6 +13,10 @@ locals {
     { name = "POSTGRES_PORT", value = "5432" },
     { name = "POSTGRES_DB", value = var.db_name },
     { name = "FRONTEND_URL", value = var.frontend_url },
+    # Public base of the API itself — used to build email-verification links and the
+    # OAuth redirect_uri. MUST be the real https host or Google rejects the callback
+    # (default is http://localhost:3001, which only works for local dev).
+    { name = "PUBLIC_API_URL", value = "https://${local.api_domain}" },
     { name = "STRIPE_USE_REAL", value = var.stripe_use_real },
     # Disable the in-process scheduler — the sweep runs as an EventBridge singleton
     # (scheduler.tf). The env var name must match app/sweep.py (SWEEP_ENABLED).
@@ -30,6 +34,9 @@ locals {
     { name = "STRIPE_WEBHOOK_SECRET", valueFrom = "${aws_secretsmanager_secret.app.arn}:STRIPE_WEBHOOK_SECRET::" },
     # The app verifies this against the X-Internal-Secret header on callbacks.
     { name = "INGEST_CALLBACK_SECRET", valueFrom = "${aws_secretsmanager_secret.app.arn}:INGEST_CALLBACK_SECRET::" },
+    # Social login (Google OIDC). Keys must exist in the rowbound/prod/app secret JSON.
+    { name = "GOOGLE_CLIENT_ID", valueFrom = "${aws_secretsmanager_secret.app.arn}:GOOGLE_CLIENT_ID::" },
+    { name = "GOOGLE_CLIENT_SECRET", valueFrom = "${aws_secretsmanager_secret.app.arn}:GOOGLE_CLIENT_SECRET::" },
   ]
 }
 
