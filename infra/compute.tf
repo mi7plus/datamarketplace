@@ -18,6 +18,9 @@ locals {
     # (default is http://localhost:3001, which only works for local dev).
     { name = "PUBLIC_API_URL", value = "https://${local.api_domain}" },
     { name = "STRIPE_USE_REAL", value = var.stripe_use_real },
+    # Require MFA to use the admin panel (admin design §5). Toggle via require_admin_mfa
+    # once all admins have enrolled MFA. app/admin_authz.py reads REQUIRE_ADMIN_MFA.
+    { name = "REQUIRE_ADMIN_MFA", value = tostring(var.require_admin_mfa) },
     # Disable the in-process scheduler — the sweep runs as an EventBridge singleton
     # (scheduler.tf). The env var name must match app/sweep.py (SWEEP_ENABLED).
     { name = "SWEEP_ENABLED", value = "false" },

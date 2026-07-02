@@ -66,6 +66,14 @@ variable "stripe_use_real" {
   default = "true"
 }
 
+# Mandatory MFA for admin-panel access (admin design §5). Keep false until every
+# admin has enrolled MFA — flipping it true locks un-enrolled admins out of /admin
+# (they can still log in and enroll, but can't use the panel until they do).
+variable "require_admin_mfa" {
+  type    = bool
+  default = false
+}
+
 # DNS / TLS — the API cert is now created + DNS-validated in dns.tf (Route 53),
 # so there is no acm_certificate_arn input; see variable "domain_name".
 
