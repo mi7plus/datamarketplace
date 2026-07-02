@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useAuthStore } from '~/stores/auth'
 import { useRoute, useRouter } from 'vue-router'
 import PageWrapper from '~/components/layout/PageWrapper.vue'
-import GoogleButton from '~/components/auth/GoogleButton.vue'
+import SocialLogins from '~/components/auth/SocialLogins.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -45,10 +45,7 @@ const submit = async () => {
         {{ notice.text }}
       </p>
 
-      <GoogleButton class="mb-4" />
-      <div class="flex items-center gap-3 mb-4 text-xs text-gray-400">
-        <span class="flex-1 border-t"></span>OR<span class="flex-1 border-t"></span>
-      </div>
+      <SocialLogins />
 
       <form @submit.prevent="submit" class="flex flex-col gap-4">
         <input

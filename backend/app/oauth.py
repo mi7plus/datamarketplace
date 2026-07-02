@@ -35,14 +35,18 @@ from app.social_auth import resolve_social_login
 logger = logging.getLogger("oauth")
 router = APIRouter()
 
-# Where each provider's OIDC discovery lives. Add Microsoft/Entra here when enabled.
+# Where each provider's OIDC discovery lives.
+# Microsoft: the `organizations` authority = work/school (Entra) accounts only, NOT
+# personal Microsoft accounts (§7.4 decision). `common` would also admit personal MSA.
 _DISCOVERY = {
     "google": "https://accounts.google.com/.well-known/openid-configuration",
+    "microsoft": "https://login.microsoftonline.com/organizations/v2.0/.well-known/openid-configuration",
 }
 
 # Env var names holding each provider's client id/secret.
 _CREDS = {
     "google": ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"),
+    "microsoft": ("MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"),
 }
 
 oauth = OAuth()
@@ -105,6 +109,36 @@ async def oauth_start(provider: str, request: Request):
     return await client.authorize_redirect(request, redirect_uri)
 
 
+def _claim_true(v) -> bool:
+    """A claim is 'true' whether it arrives as a JSON bool or a string. (bool('false')
+    is True in Python, so never rely on truthiness for string claims.)"""
+    return v is True or v == 1 or (isinstance(v, str) and v.strip().lower() in {"true", "1"})
+
+
+def _extract_identity(provider: str, claims: dict) -> tuple[str | None, str | None, bool]:
+    """Pull (subject, email, email_verified) from a provider's ID-token claims.
+
+    Google is standard OIDC — honour its `email_verified`.
+
+    Microsoft ID tokens carry NO `email_verified`. We already restrict to the
+    `organizations` authority (work/school tenants only). The strong signal that a
+    tenant actually owns the email's domain is `xms_edov` (email-domain-owner-verified);
+    when true, the email is safe to link on. Tenants that don't emit that optional claim
+    fall back to "trusted because it's a work/school account" — UNLESS
+    MICROSOFT_REQUIRE_EDOV=true, which enforces the stronger check (and will 403 logins
+    from tenants that don't send xms_edov). `preferred_username` is the UPN fallback when
+    no `email` claim is present."""
+    subject = claims.get("sub")
+    if provider == "microsoft":
+        email = (claims.get("email") or claims.get("preferred_username") or "").strip() or None
+        if _claim_true(claims.get("xms_edov")):
+            verified = True
+        else:
+            verified = os.getenv("MICROSOFT_REQUIRE_EDOV", "false").lower() != "true"
+        return subject, email, verified
+    return subject, claims.get("email"), bool(claims.get("email_verified"))
+
+
 @router.get("/{provider}/callback")
 async def oauth_callback(provider: str, request: Request, db: Session = Depends(get_db)):
     """Provider redirects back here with a code. Exchange it, verify the ID token,
@@ -122,7 +156,7 @@ async def oauth_callback(provider: str, request: Request, db: Session = Depends(
     if not claims:
         return RedirectResponse(url=f"{frontend}/login?error=oauth", status_code=302)
 
-    subject = claims.get("sub")
+    subject, email, email_verified = _extract_identity(provider, claims)
     if not subject:
         return RedirectResponse(url=f"{frontend}/login?error=oauth", status_code=302)
 
@@ -131,8 +165,8 @@ async def oauth_callback(provider: str, request: Request, db: Session = Depends(
             db,
             provider=provider,
             subject=subject,
-            email=claims.get("email"),
-            email_verified=bool(claims.get("email_verified")),
+            email=email,
+            email_verified=email_verified,
         )
     except HTTPException:
         # Only reachable on an unverified provider email (resolve_social_login raises

@@ -37,6 +37,9 @@ locals {
     # Social login (Google OIDC). Keys must exist in the rowbound/prod/app secret JSON.
     { name = "GOOGLE_CLIENT_ID", valueFrom = "${aws_secretsmanager_secret.app.arn}:GOOGLE_CLIENT_ID::" },
     { name = "GOOGLE_CLIENT_SECRET", valueFrom = "${aws_secretsmanager_secret.app.arn}:GOOGLE_CLIENT_SECRET::" },
+    # Social login (Microsoft / Entra, work-school only). Keys must exist in the secret JSON.
+    { name = "MICROSOFT_CLIENT_ID", valueFrom = "${aws_secretsmanager_secret.app.arn}:MICROSOFT_CLIENT_ID::" },
+    { name = "MICROSOFT_CLIENT_SECRET", valueFrom = "${aws_secretsmanager_secret.app.arn}:MICROSOFT_CLIENT_SECRET::" },
   ]
 }
 
