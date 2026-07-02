@@ -1,17 +1,23 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, Request
+from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
+from pydantic import BaseModel, EmailStr
 import os
 import uuid
 import hashlib
+import logging
 
 from app.schemas import RegisterSchema, LoginSchema, TokenSchema
 from app.models import UserAuth as User
 from app.db import get_db
 from app.ratelimit import rate_limit
+from app.mailer import get_mailer
+
+logger = logging.getLogger("auth")
 
 router = APIRouter()
 
@@ -65,6 +71,56 @@ def _hash_refresh_token(token: str) -> str:
 
 
 # -----------------------------
+# EMAIL VERIFICATION (Social-login plan, Phase 1)
+# -----------------------------
+# `is_verified` is the single "email proven" flag (reused as email_verified). A
+# signed, expiring token is emailed on register; GET /auth/verify sets it true.
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+PUBLIC_API_URL = os.getenv("PUBLIC_API_URL", "http://localhost:3001")
+EMAIL_VERIFICATION_EXPIRE_HOURS = int(os.getenv("EMAIL_VERIFICATION_EXPIRE_HOURS", "24"))
+
+
+def create_email_verification_token(user_id: str) -> str:
+    payload = {
+        "sub": str(user_id),
+        "purpose": "email_verify",
+        "exp": datetime.utcnow() + timedelta(hours=EMAIL_VERIFICATION_EXPIRE_HOURS),
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def _decode_email_verification_token(token: str) -> str:
+    """Return the user_id from a valid email-verification token, or raise 400."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification link")
+    if payload.get("purpose") != "email_verify" or not payload.get("sub"):
+        raise HTTPException(status_code=400, detail="Invalid verification link")
+    return payload["sub"]
+
+
+def _send_verification_email(user) -> None:
+    """Best-effort: email a verification link. Never raises — a mail failure must
+    not block registration (the user can request a resend)."""
+    try:
+        token = create_email_verification_token(user.id)
+        link = f"{PUBLIC_API_URL}/auth/verify?token={token}"
+        get_mailer().send(
+            to=user.email,
+            subject="Verify your Rowbound email",
+            body=(
+                "Welcome to Rowbound.\n\n"
+                f"Confirm your email address to finish setting up your account:\n{link}\n\n"
+                f"This link expires in {EMAIL_VERIFICATION_EXPIRE_HOURS} hours. "
+                "If you didn't sign up, you can ignore this email."
+            ),
+        )
+    except Exception:
+        logger.exception("failed to send verification email to %s", getattr(user, "email", "?"))
+
+
+# -----------------------------
 # REGISTER
 # -----------------------------
 
@@ -85,7 +141,43 @@ def register(data: RegisterSchema, db: Session = Depends(get_db), _rl=Depends(_r
     db.commit()
     db.refresh(user)
 
-    return {"msg": "User registered"}
+    # Email verification (Phase 1). Additive: registration still succeeds and the
+    # account is usable; is_verified stays False until the link is clicked.
+    _send_verification_email(user)
+
+    return {"msg": "User registered", "verification_email_sent": True}
+
+
+@router.get("/verify")
+def verify_email(token: str, db: Session = Depends(get_db)):
+    """Confirm an email from the link in the verification email. Sets is_verified,
+    then redirects into the app. Idempotent — a second click is a clean no-op."""
+    user_id = _decode_email_verification_token(token)
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid verification link")
+    if not user.is_verified:
+        user.is_verified = True
+        db.commit()
+    return RedirectResponse(url=f"{FRONTEND_URL}/login?verified=1", status_code=302)
+
+
+_resend_rl = rate_limit("verify_resend", limit=5, window_seconds=300)
+
+
+class ResendVerificationSchema(BaseModel):
+    email: EmailStr
+
+
+@router.post("/verify/resend")
+def resend_verification(data: ResendVerificationSchema, db: Session = Depends(get_db), _rl=Depends(_resend_rl)):
+    """Re-send the verification email. Returns the SAME response whether or not the
+    email exists (no account enumeration); only actually sends if it's a real,
+    still-unverified account."""
+    user = db.query(User).filter(User.email == data.email).first()
+    if user and not user.is_verified:
+        _send_verification_email(user)
+    return {"msg": "If that email is registered and unverified, a verification link has been sent."}
 
 
 # -----------------------------
