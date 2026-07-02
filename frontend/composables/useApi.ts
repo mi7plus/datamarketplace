@@ -64,10 +64,10 @@ export const useApi = () => {
         return res.blob()
     }
 
-    const post = (url: string, data: any) =>
+    const post = (url: string, data: any, extraHeaders: Record<string, string> = {}) =>
         request(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...extraHeaders },
             body: JSON.stringify(data),
         })
 

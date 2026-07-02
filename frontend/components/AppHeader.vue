@@ -2,10 +2,16 @@
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useAdmin } from '~/composables/useAdmin'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+
+// Surface an Admin link only to admins. Resolve admin status lazily once a session
+// exists (GET /admin/me 403s for non-admins → me stays null). Backend enforces access.
+const { me, loadAdmin } = useAdmin()
+watch(() => auth.isAuthenticated, (ok) => { if (ok && import.meta.client) loadAdmin() }, { immediate: true })
 
 const open = ref(false)
 const close = () => { open.value = false }
@@ -32,6 +38,7 @@ const links = computed(() => {
       { to: '/profile', label: 'My Profile' },
     )
   }
+  if (me.value) l.push({ to: '/admin', label: 'Admin' })
   return l
 })
 
