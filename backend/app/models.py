@@ -42,6 +42,15 @@ class UserRole(str, enum.Enum):
     PROVIDER = "provider"
     ADMIN = "admin"
 
+class AdminRole(str, enum.Enum):
+    """Admin privilege tier, ORTHOGONAL to UserRole (a person's marketplace role is
+    separate from their admin access). NULL admin_role = not an admin. Only SUPER_ADMIN
+    can grant/revoke admin roles. Capability mapping lives in app/admin_authz.py."""
+    SUPER_ADMIN = "super_admin"     # everything, incl. managing admins + Tier 3
+    SUPPORT_LEAD = "support_lead"   # Tier 1 + full Tier 2 (disputes, refunds, unlocks…)
+    SUPPORT_AGENT = "support_agent" # Tier 1 + limited Tier 2 (unlock, resend, quarantine)
+    READ_ONLY = "read_only"         # Tier 1 only (observe)
+
 class SubmissionStatus(str, enum.Enum):
     PENDING = "pending"
     VALIDATED = "validated"
@@ -71,6 +80,10 @@ class UserAuth(BaseModel):
     password_hash = Column(String, nullable=True)
     refresh_token_hash = Column(String)
     role = Column(Enum(UserRole, name="user_role_enum"), nullable=False)
+    # Orthogonal admin privilege (admin panel RBAC). NULL = not an admin.
+    admin_role = Column(Enum(AdminRole, name="admin_role_enum"), nullable=True)
+    # Set true to disable an account (Tier-2 suspend). Blocks login.
+    suspended = Column(Boolean, nullable=False, server_default="false", default=False)
     is_verified = Column(Boolean, default=False)
     account_locked = Column(Boolean, default=False)
     failed_login_attempts = Column(Integer, default=0)

@@ -212,6 +212,11 @@ def login(
             db.commit()
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    # Suspended accounts (admin Tier-2 action) can't sign in, even with the right
+    # password. Checked after password verify so it doesn't leak account state.
+    if getattr(user, "suspended", False):
+        raise HTTPException(status_code=403, detail="This account has been suspended.")
+
     # Success — clear the failure state.
     user.failed_login_attempts = 0
     user.account_locked = False
