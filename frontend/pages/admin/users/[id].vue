@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useApi } from '~/composables/useApi'
 import { useAdmin } from '~/composables/useAdmin'
 import { useToast } from '~/composables/useToast'
 import AdminShell from '~/components/admin/AdminShell.vue'
+import StepUpModal from '~/components/admin/StepUpModal.vue'
 
 definePageMeta({ middleware: ['admin'] })
 
@@ -27,31 +28,36 @@ const load = async () => {
 }
 onMounted(load)
 
-// Run a Tier-2 action: prompt for a required reason, and — when the acting admin has
-// MFA on — a step-up TOTP code for sensitive actions. Sends X-MFA-Code so the backend
-// step-up check passes.
-const act = async (path: string, label: string, stepUp = false, extra: any = {}) => {
-  const reason = window.prompt(`${label} — reason (recorded in the audit log):`, '')
-  if (reason === null) return
+// A pending Tier-2 action awaiting confirmation in the modal.
+const pending = ref<null | {
+  path: string; title: string; description?: string; danger?: boolean
+  sensitive?: boolean; roleSelect?: boolean
+}>(null)
+const submitting = ref(false)
+
+// Sensitive actions (refund, MFA reset, admin-role) require a step-up code when the
+// acting admin has MFA on — the modal collects it and we send X-MFA-Code.
+const modalRequireCode = computed(() => !!pending.value?.sensitive && !!me.value?.mfa_enabled)
+
+const openAction = (cfg: NonNullable<typeof pending.value>) => { pending.value = cfg }
+
+const onConfirm = async (payload: { reason: string; code: string; role: string | null }) => {
+  if (!pending.value) return
+  submitting.value = true
   const headers: Record<string, string> = {}
-  if (stepUp && me.value?.mfa_enabled) {
-    const code = window.prompt('Enter your current MFA code to authorize:')
-    if (!code) return
-    headers['X-MFA-Code'] = code
-  }
+  if (modalRequireCode.value && payload.code) headers['X-MFA-Code'] = payload.code
+  const body: any = { reason: payload.reason }
+  if (pending.value.roleSelect) body.admin_role = payload.role
   try {
-    await useApi().post(`/admin/${path}`, { reason, ...extra }, headers)
-    toast.success(`${label} done`)
+    await useApi().post(`/admin/${pending.value.path}`, body, headers)
+    toast.success('Done')
+    pending.value = null
     await load()
   } catch (e: any) {
     toast.error(e.message || 'Action failed')
+  } finally {
+    submitting.value = false
   }
-}
-
-const setRole = async () => {
-  const role = window.prompt('Admin role (super_admin / support_lead / support_agent / read_only, or blank to revoke):', '')
-  if (role === null) return
-  await act(`users/${id}/admin-role`, 'Change admin role', true, { admin_role: role || null })
 }
 </script>
 
@@ -74,22 +80,22 @@ const setRole = async () => {
       <!-- Tier-2 actions, shown only for capabilities this admin holds -->
       <div class="mt-5 flex flex-wrap gap-2">
         <button v-if="can('user.unlock') && (user.account_locked || user.failed_login_attempts)"
-                @click="act(`users/${id}/unlock`, 'Unlock account')"
+                @click="openAction({ path: `users/${id}/unlock`, title: 'Unlock account' })"
                 class="px-3 py-1.5 text-sm rounded bg-amber-600 text-white hover:bg-amber-700">Unlock</button>
         <button v-if="can('user.suspend') && !user.suspended && !user.admin_role"
-                @click="act(`users/${id}/suspend`, 'Suspend account')"
+                @click="openAction({ path: `users/${id}/suspend`, title: 'Suspend account', danger: true, description: 'The account will be signed out and blocked from logging in.' })"
                 class="px-3 py-1.5 text-sm rounded bg-red-600 text-white hover:bg-red-700">Suspend</button>
         <button v-if="can('user.suspend') && user.suspended"
-                @click="act(`users/${id}/reactivate`, 'Reactivate account')"
+                @click="openAction({ path: `users/${id}/reactivate`, title: 'Reactivate account' })"
                 class="px-3 py-1.5 text-sm rounded bg-green-600 text-white hover:bg-green-700">Reactivate</button>
         <button v-if="can('user.verify_resend') && !user.is_verified"
-                @click="act(`users/${id}/resend-verification`, 'Resend verification')"
+                @click="openAction({ path: `users/${id}/resend-verification`, title: 'Resend verification email' })"
                 class="px-3 py-1.5 text-sm rounded bg-gray-700 text-white hover:bg-gray-800">Resend verification</button>
         <button v-if="can('user.mfa_reset') && user.mfa_enabled"
-                @click="act(`users/${id}/reset-mfa`, 'Reset MFA', true)"
+                @click="openAction({ path: `users/${id}/reset-mfa`, title: 'Reset MFA', danger: true, sensitive: true, description: 'Clears the user\'s MFA so they must re-enroll. Account-recovery only.' })"
                 class="px-3 py-1.5 text-sm rounded bg-gray-700 text-white hover:bg-gray-800">Reset MFA</button>
         <button v-if="can('admin.manage')"
-                @click="setRole"
+                @click="openAction({ path: `users/${id}/admin-role`, title: 'Change admin role', sensitive: true, roleSelect: true, description: 'Grant or revoke this user\'s admin privileges.' })"
                 class="px-3 py-1.5 text-sm rounded border border-teal-600 text-teal-700 hover:bg-teal-50">Change admin role</button>
       </div>
 
@@ -110,7 +116,7 @@ const setRole = async () => {
             <li v-for="s in activity.submissions" :key="s.id" class="bg-white rounded shadow-sm p-2 flex justify-between">
               <span>{{ s.status }}<span v-if="s.quarantined" class="text-red-600"> · quarantined</span></span>
               <button v-if="can('dataset.quarantine')"
-                      @click="act(`submissions/${s.id}/${s.quarantined ? 'unquarantine' : 'quarantine'}`, s.quarantined ? 'Release quarantine' : 'Quarantine dataset')"
+                      @click="openAction({ path: `submissions/${s.id}/${s.quarantined ? 'unquarantine' : 'quarantine'}`, title: s.quarantined ? 'Release quarantine' : 'Quarantine dataset' })"
                       class="text-xs text-teal-700 hover:underline">
                 {{ s.quarantined ? 'Release' : 'Quarantine' }}
               </button>
@@ -138,5 +144,17 @@ const setRole = async () => {
         </section>
       </div>
     </div>
+
+    <StepUpModal
+      :open="!!pending"
+      :title="pending?.title || ''"
+      :description="pending?.description"
+      :danger="pending?.danger"
+      :require-code="modalRequireCode"
+      :role-select="pending?.roleSelect"
+      :confirm-label="submitting ? 'Working…' : 'Confirm'"
+      @confirm="onConfirm"
+      @cancel="pending = null"
+    />
   </AdminShell>
 </template>
