@@ -19,3 +19,5 @@ apscheduler
 
 pyotp
 clamd
+authlib          # OIDC client for social login (Google) — social-login plan Phase 3
+itsdangerous     # signs the Starlette session cookie authlib uses for OAuth state/nonce

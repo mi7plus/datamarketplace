@@ -1,7 +1,9 @@
 # app/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from app.auth import router as auth_router
+from app.oauth import router as oauth_router
 from app.requests import router as requests_router
 from app.submissions import router as submissions_router
 from app.profile import router as profile_router
@@ -94,7 +96,19 @@ async def security_headers(request, call_next):
     response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
     return response
 
+# Short-lived signed session cookie used ONLY to carry OAuth state+nonce between
+# /auth/oauth/{provider}/start and /callback (authlib requires request.session).
+# Not used for app auth — that stays JWT + httpOnly refresh cookie.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SECRET_KEY", "supersecret"),
+    same_site="lax",
+    https_only=frontend_url.startswith("https"),
+    max_age=600,
+)
+
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(oauth_router, prefix="/auth/oauth", tags=["oauth"])
 app.include_router(requests_router, prefix="/requests", tags=["requests"])
 app.include_router(submissions_router, prefix="/submissions", tags=["submissions"])
 app.include_router(profile_router, prefix="/profile", tags=["profile"])
