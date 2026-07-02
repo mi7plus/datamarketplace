@@ -5,6 +5,7 @@ import { useApi } from '~/composables/useApi'
 import { useAuthStore } from '~/stores/auth'
 import PageWrapper from '~/components/layout/PageWrapper.vue'
 import BackButton from '~/components/BackButton.vue'
+import MfaSetup from '~/components/account/MfaSetup.vue'
 
 definePageMeta({ middleware: 'auth' })
 
@@ -206,6 +207,9 @@ onMounted(async () => {
         </div>
       </div>
     </div>
+
+    <!-- ====== Security / MFA ====== -->
+    <MfaSetup />
 
     <!-- ====== Stripe Connect (providers only) ====== -->
     <div v-if="auth.user?.role === 'provider'" class="mt-10 border rounded-lg p-6 bg-white">

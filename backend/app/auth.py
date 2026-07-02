@@ -390,6 +390,12 @@ def verify_totp(user: User, code: str | None) -> bool:
     return pyotp.TOTP(user.mfa_secret).verify(code, valid_window=1)
 
 
+@router.get("/mfa/status")
+def mfa_status(current_user: User = Depends(get_current_user)):
+    """Whether the current user has MFA active (drives the account-security UI)."""
+    return {"mfa_enabled": bool(current_user.mfa_enabled)}
+
+
 @router.post("/mfa/enroll")
 def mfa_enroll(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Begin TOTP enrolment: issue a secret + provisioning URI. Not active until verified."""
